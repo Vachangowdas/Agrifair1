@@ -1,3 +1,4 @@
+
 import React from 'react';
 import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -7,6 +8,7 @@ import Home from './pages/Home';
 import Auth from './pages/Auth';
 import CalculatorPage from './pages/Calculator';
 import ComplaintsPage from './pages/Complaints';
+import About from './pages/About';
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {
@@ -22,6 +24,7 @@ const AppRoutes = () => {
     <Layout>
       <Routes>
         <Route path="/" element={<Home />} />
+        <Route path="/about" element={<About />} />
         <Route path="/auth" element={<Auth />} />
         <Route 
           path="/calculator" 

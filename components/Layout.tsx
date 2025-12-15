@@ -1,9 +1,10 @@
+
 import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { SupportedLanguage } from '../types';
-import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown } from 'lucide-react';
+import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Info } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();
@@ -42,6 +43,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
               <div className="ml-10 flex items-baseline space-x-4">
                 <Link to="/" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive('/')}`}>
                   {t('nav_home')}
+                </Link>
+                <Link to="/about" className={`px-3 py-2 rounded-md text-sm font-medium transition-colors ${isActive('/about')}`}>
+                  {t('nav_about')}
                 </Link>
                 {user && (
                   <>
@@ -156,6 +160,9 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                </div>
               <Link to="/" onClick={() => setIsMenuOpen(false)} className="text-white hover:bg-green-600 block px-3 py-2 rounded-md text-base font-medium">
                 {t('nav_home')}
+              </Link>
+              <Link to="/about" onClick={() => setIsMenuOpen(false)} className="text-white hover:bg-green-600 block px-3 py-2 rounded-md text-base font-medium">
+                {t('nav_about')}
               </Link>
               {user && (
                 <>

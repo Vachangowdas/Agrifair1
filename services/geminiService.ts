@@ -4,7 +4,8 @@ import { CropInput, PriceResult, SupportedLanguage } from '../types';
 
 // We use process.env.API_KEY. 
 // Note: Ensure your bundler (Vite/Webpack) is configured to define this variable.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+// We add a fallback empty string to prevent the app from crashing on load if the key is missing.
+const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
 
 export const calculateFairPrice = async (input: CropInput, language: SupportedLanguage): Promise<PriceResult> => {
   // Calculate total cost for the prompt context

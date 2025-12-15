@@ -2,12 +2,19 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CropInput, PriceResult, SupportedLanguage } from '../types';
 
-// We use process.env.API_KEY. 
-// Note: Ensure your bundler (Vite/Webpack) is configured to define this variable.
-// We add a fallback empty string to prevent the app from crashing on load if the key is missing.
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || "" });
+// We use process.env.API_KEY which is mapped from VITE_API_KEY in vite.config.ts
+const apiKey = process.env.API_KEY || "";
+const ai = new GoogleGenAI({ apiKey: apiKey });
 
 export const calculateFairPrice = async (input: CropInput, language: SupportedLanguage): Promise<PriceResult> => {
+  
+  // Explicit check for API Key to give user a helpful error message
+  if (!apiKey || apiKey === "") {
+    throw new Error(
+      "API Key is missing. If running locally, add VITE_API_KEY to your .env file. If deployed, add VITE_API_KEY to your Environment Variables."
+    );
+  }
+
   // Calculate total cost for the prompt context
   const totalCost = Number(input.seedCost) + 
                     Number(input.fertilizerCost) + 
@@ -83,8 +90,12 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
     if (!text) throw new Error("No response from AI");
     
     return JSON.parse(text) as PriceResult;
-  } catch (error) {
+  } catch (error: any) {
     console.error("Gemini Calculation Error:", error);
+    // Pass through the specific API key error if that was the cause
+    if (error.message.includes("API Key")) {
+      throw error;
+    }
     throw new Error("Failed to calculate fair price. Please try again.");
   }
 };

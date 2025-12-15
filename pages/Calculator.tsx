@@ -5,13 +5,14 @@ import { calculateFairPrice } from '../services/geminiService';
 import { CropInput, PriceResult } from '../types';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { Calculator, AlertTriangle, CheckCircle, TrendingUp, IndianRupee } from 'lucide-react';
+import { Calculator, AlertTriangle, CheckCircle, TrendingUp, IndianRupee, AlertCircle } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const CalculatorPage: React.FC = () => {
   const { t, language } = useLanguage();
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<PriceResult | null>(null);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const [formData, setFormData] = useState<CropInput>({
     cropName: '',
@@ -29,17 +30,21 @@ const CalculatorPage: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
+    // Clear errors when user types
+    if (errorMsg) setErrorMsg(null);
   };
 
   const handleCalculate = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
     setResult(null);
+    setErrorMsg(null);
+    
     try {
       const data = await calculateFairPrice(formData, language);
       setResult(data);
-    } catch (err) {
-      alert("Failed to calculate. Please check API key or internet.");
+    } catch (err: any) {
+      setErrorMsg(err.message || "Failed to calculate. Please check API key or internet.");
     } finally {
       setLoading(false);
     }
@@ -57,6 +62,13 @@ const CalculatorPage: React.FC = () => {
       <h1 className="text-3xl font-bold text-green-900 mb-8 flex items-center">
         <Calculator className="mr-3" /> {t('calc_title')}
       </h1>
+      
+      {errorMsg && (
+        <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-md flex items-start">
+          <AlertCircle className="text-red-500 w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
+          <p className="text-red-700 font-medium">{errorMsg}</p>
+        </div>
+      )}
 
       <div className="grid lg:grid-cols-2 gap-8">
         {/* Input Form */}

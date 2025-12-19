@@ -2,18 +2,23 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { CropInput, PriceResult, SupportedLanguage } from '../types';
 
-// We use process.env.API_KEY which is mapped from VITE_API_KEY in vite.config.ts
-const apiKey = process.env.API_KEY || "";
-const ai = new GoogleGenAI({ apiKey: apiKey });
-
+/**
+ * Service to interact with Google Gemini AI for fair price calculations.
+ * The API key is injected via vite.config.ts from environment variables.
+ */
 export const calculateFairPrice = async (input: CropInput, language: SupportedLanguage): Promise<PriceResult> => {
   
-  // Explicit check for API Key to give user a helpful error message
+  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
+  const apiKey = process.env.API_KEY;
+
   if (!apiKey || apiKey === "") {
     throw new Error(
-      "API Key is missing. If running locally, add VITE_API_KEY to your .env file. If deployed, add VITE_API_KEY to your Environment Variables."
+      "Missing API Key. Please add 'VITE_API_KEY' to your Vercel Environment Variables or local .env file and redeploy."
     );
   }
+
+  // Initialize the AI client
+  const ai = new GoogleGenAI({ apiKey: apiKey });
 
   // Calculate total cost for the prompt context
   const totalCost = Number(input.seedCost) + 
@@ -48,21 +53,21 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
     
     Output strictly in JSON format matching this schema:
     {
-      "fairPrice": number (The total fair amount for the total quantity),
-      "marketComparison": number (Percentage difference, e.g., 15 for 15% higher than market),
-      "explanation": string (A short paragraph explaining why this price is fair, in language: ${language}),
+      "fairPrice": number,
+      "marketComparison": number,
+      "explanation": string,
       "breakdown": {
-        "baseCost": number (Cost coverage),
-        "profitMargin": number (Pure profit for farmer),
-        "riskPremium": number (Buffer for weather/market risks)
+        "baseCost": number,
+        "profitMargin": number,
+        "riskPremium": number
       },
-      "recommendation": string (Advice for the farmer, in language: ${language})
+      "recommendation": string
     }
   `;
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -78,24 +83,27 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
                 baseCost: { type: Type.NUMBER },
                 profitMargin: { type: Type.NUMBER },
                 riskPremium: { type: Type.NUMBER },
-              }
+              },
+              required: ["baseCost", "profitMargin", "riskPremium"]
             },
             recommendation: { type: Type.STRING },
-          }
+          },
+          required: ["fairPrice", "marketComparison", "explanation", "breakdown", "recommendation"]
         }
       }
     });
 
     const text = response.text;
-    if (!text) throw new Error("No response from AI");
+    if (!text) throw new Error("The AI returned an empty response.");
     
     return JSON.parse(text) as PriceResult;
   } catch (error: any) {
-    console.error("Gemini Calculation Error:", error);
-    // Pass through the specific API key error if that was the cause
-    if (error.message.includes("API Key")) {
-      throw error;
+    console.error("Gemini API Error:", error);
+    
+    if (error.message?.includes("API_KEY_INVALID") || error.message?.includes("API key not found")) {
+      throw new Error("The API key provided is invalid. Please check your Google AI Studio dashboard.");
     }
-    throw new Error("Failed to calculate fair price. Please try again.");
+    
+    throw new Error(error.message || "An error occurred while calculating the fair price.");
   }
 };

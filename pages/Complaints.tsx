@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
-import { MockDB } from '../services/mockDb';
+// Fixed import: MockDB was renamed to DatabaseService in the service file
+import { DatabaseService } from '../services/mockDb';
 import { Complaint } from '../types';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
@@ -14,10 +15,11 @@ const ComplaintsPage: React.FC = () => {
   const [traderName, setTraderName] = useState('');
   const [issue, setIssue] = useState('');
 
-  const refreshComplaints = () => {
+  // Fixed: refreshComplaints is now async to match DatabaseService's implementation
+  const refreshComplaints = async () => {
     if (user) {
-      const data = MockDB.getComplaintsByUserId(user.id);
-      setComplaints(data.reverse()); // Show newest first
+      const data = await DatabaseService.getComplaintsByUserId(user.id);
+      setComplaints(data); // DatabaseService.getComplaintsByUserId already returns reversed list
     }
   };
 
@@ -26,7 +28,8 @@ const ComplaintsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fixed: handleSubmit is now async to properly await createComplaint
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
@@ -39,7 +42,8 @@ const ComplaintsPage: React.FC = () => {
       status: 'Pending'
     };
 
-    MockDB.createComplaint(newComplaint);
+    // Await the database operation
+    await DatabaseService.createComplaint(newComplaint);
     setTraderName('');
     setIssue('');
     alert("Complaint Registered Successfully");

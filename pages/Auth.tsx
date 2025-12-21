@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle } from 'lucide-react';
+import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Hash } from 'lucide-react';
+import { DatabaseService } from '../services/mockDb';
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -17,14 +18,12 @@ const Auth: React.FC = () => {
   const [otpSentMsg, setOtpSentMsg] = useState(false);
   const [error, setError] = useState('');
   
-  // State for simulated SMS notification
   const [demoOtpNotification, setDemoOtpNotification] = useState<string | null>(null);
   
-  const { login, signup, requestOtp, checkUserExists } = useAuth();
+  const { login, signup, requestOtp } = useAuth();
   const { t } = useLanguage();
   const navigate = useNavigate();
 
-  // Auto-hide notification after 10 seconds
   useEffect(() => {
     if (demoOtpNotification) {
       const timer = setTimeout(() => setDemoOtpNotification(null), 10000);
@@ -32,13 +31,12 @@ const Auth: React.FC = () => {
     }
   }, [demoOtpNotification]);
 
-  // Clear error when switching modes
   useEffect(() => {
     setError('');
   }, [isLogin]);
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const value = e.target.value.replace(/\D/g, ''); // Filter non-digits
+    const value = e.target.value.replace(/\D/g, ''); 
     if (value.length <= 10) {
       setMobile(value);
       if (error) setError('');
@@ -56,35 +54,31 @@ const Auth: React.FC = () => {
       return;
     }
 
-    // Logic Check 1: Login Mode - User MUST exist
-    if (isLogin) {
-      const exists = checkUserExists(mobile);
-      if (!exists) {
-        setError('Mobile number not registered.');
-        return;
-      }
+    setIsLoading(true);
+    
+    // Check user existence via async DB service
+    const existingUser = await DatabaseService.findUserByMobile(mobile);
+
+    if (isLogin && !existingUser) {
+      setError('Mobile number not registered.');
+      setIsLoading(false);
+      return;
     } 
-    // Logic Check 2: Signup Mode - User MUST NOT exist
-    else {
-      const exists = checkUserExists(mobile);
-      if (exists) {
-        setError('User already registered. Please Login.');
-        return;
-      }
+    
+    if (!isLogin && existingUser) {
+      setError('User already registered. Please Login.');
+      setIsLoading(false);
+      return;
     }
 
-    setIsLoading(true);
     setOtpSentMsg(false);
     setDemoOtpNotification(null);
     
-    // Request OTP from context
     const code = await requestOtp(mobile);
     
     setIsLoading(false);
     setShowOtp(true);
     setOtpSentMsg(true);
-    
-    // Show the "Fake SMS" notification
     setDemoOtpNotification(code);
   };
 
@@ -102,39 +96,15 @@ const Auth: React.FC = () => {
 
     setIsLoading(false);
     if (success) {
-      setDemoOtpNotification(null); // Clear notification on success
+      setDemoOtpNotification(null);
       navigate('/calculator');
     } else {
-      // If signup failed but we passed initial checks, it likely means duplication or system error
-      if (!isLogin && checkUserExists(mobile)) {
-         setError("User already registered.");
-      } else {
-         setError("Invalid OTP or Action Failed");
-      }
+      setError("Invalid OTP or Verification Failed");
     }
-  };
-
-  const switchToRegister = () => {
-    setIsLogin(false);
-    setShowOtp(false);
-    setOtpSentMsg(false);
-    setOtp('');
-    setDemoOtpNotification(null);
-    setError('');
-  };
-
-  const switchToLogin = () => {
-    setIsLogin(true);
-    setShowOtp(false);
-    setOtpSentMsg(false);
-    setOtp('');
-    setDemoOtpNotification(null);
-    setError('');
   };
 
   return (
     <>
-      {/* Simulated SMS Notification Toast */}
       {demoOtpNotification && (
         <div className="fixed top-4 right-4 max-w-sm w-full bg-slate-800 text-white p-4 rounded-xl shadow-2xl z-50 border-l-4 border-green-500 animate-bounce-in transition-all">
           <div className="flex justify-between items-start">
@@ -144,16 +114,11 @@ const Auth: React.FC = () => {
               </div>
               <div>
                 <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Messages • Now</p>
-                <p className="font-medium text-sm text-gray-200">AgriFair Verification Code:</p>
+                <p className="font-medium text-sm text-gray-200">AgriFair Code:</p>
                 <p className="text-2xl font-bold text-white tracking-widest mt-1">{demoOtpNotification}</p>
               </div>
             </div>
-            <button 
-              onClick={() => setDemoOtpNotification(null)} 
-              className="text-gray-500 hover:text-white transition-colors"
-            >
-              <X size={20}/>
-            </button>
+            <button onClick={() => setDemoOtpNotification(null)} className="text-gray-500 hover:text-white"><X size={20}/></button>
           </div>
         </div>
       )}
@@ -170,69 +135,42 @@ const Auth: React.FC = () => {
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-start flex-col text-sm">
-              <div className="flex items-center mb-1">
-                <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-                <span className="font-bold">{error}</span>
-              </div>
-              {error.includes('not registered') && (
-                <button 
-                  onClick={switchToRegister}
-                  className="ml-7 text-red-800 underline hover:text-red-900 font-medium"
-                >
-                  Click here to Register &rarr;
-                </button>
-              )}
-              {error.includes('already registered') && (
-                <button 
-                  onClick={switchToLogin}
-                  className="ml-7 text-red-800 underline hover:text-red-900 font-medium"
-                >
-                  Click here to Login &rarr;
-                </button>
-              )}
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-start text-sm">
+              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
+              <span className="font-bold">{error}</span>
             </div>
           )}
 
           {!showOtp ? (
             <form onSubmit={handleGetOtp}>
                {!isLogin && (
+                <Input label={t('auth_username')} value={username} onChange={e => setUsername(e.target.value)} required />
+              )}
+              <div className="relative">
                 <Input 
-                  label={t('auth_username')} 
-                  value={username} 
-                  onChange={e => setUsername(e.target.value)}
+                  label={t('auth_mobile')} 
+                  value={mobile} 
+                  onChange={handleMobileChange}
+                  type="tel"
+                  placeholder="e.g. 9876543210"
+                  maxLength={10}
                   required
                 />
-              )}
-              <Input 
-                label={t('auth_mobile')} 
-                value={mobile} 
-                onChange={handleMobileChange}
-                type="tel"
-                placeholder="e.g. 9876543210"
-                maxLength={10}
-                required
-              />
+                <span className={`absolute right-3 top-9 text-[10px] font-bold ${mobile.length === 10 ? 'text-green-500' : 'text-gray-300'}`}>
+                  {mobile.length}/10
+                </span>
+              </div>
               <Button fullWidth type="submit" disabled={isLoading}>
-                {isLoading ? 'Sending OTP...' : t('auth_get_otp')}
+                {isLoading ? 'Connecting to Database...' : t('auth_get_otp')}
               </Button>
             </form>
           ) : (
             <form onSubmit={handleSubmit}>
               {otpSentMsg && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 flex items-start">
-                  <CheckCircle className="w-5 h-5 text-green-500 mr-2 mt-0.5 flex-shrink-0" />
-                  <div className="text-sm text-green-800">
-                    <p className="font-medium">OTP Sent!</p>
-                    <p className="text-xs mt-1">Check the notification bubble at the top right of your screen.</p>
-                  </div>
+                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-800">
+                  <CheckCircle className="inline w-3 h-3 mr-1" /> OTP sent to {mobile}. Check your messages.
                 </div>
               )}
-              
-              <p className="text-sm text-gray-500 mb-4 text-center">
-                Enter the code sent to <span className="font-bold text-gray-700">{mobile}</span>
-              </p>
-              
               <Input 
                 label={t('auth_otp')} 
                 value={otp} 
@@ -243,24 +181,15 @@ const Auth: React.FC = () => {
                 required
                 className="text-center tracking-widest font-mono text-lg"
               />
-              
               <Button fullWidth type="submit" disabled={isLoading}>
                 {isLoading ? 'Verifying...' : t('auth_verify')}
               </Button>
-              
-              <button 
-                type="button" 
-                onClick={() => { setShowOtp(false); setOtpSentMsg(false); setOtp(''); setDemoOtpNotification(null); setError(''); }}
-                className="w-full mt-4 text-sm text-green-600 hover:underline"
-              >
-                Change Mobile Number
-              </button>
             </form>
           )}
 
           <div className="mt-6 text-center pt-4 border-t border-gray-100">
             <button 
-              onClick={isLogin ? switchToRegister : switchToLogin}
+              onClick={() => setIsLogin(!isLogin)}
               className="text-green-700 font-medium hover:underline text-sm"
             >
               {isLogin ? t('auth_switch_signup') : t('auth_switch_login')}

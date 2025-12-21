@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-import { MockDB } from '../services/mockDb';
+// Fixed import: MockDB was renamed to DatabaseService in the service file
+import { DatabaseService } from '../services/mockDb';
 
 interface AuthContextType {
   user: User | null;
@@ -32,7 +33,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   }, []);
 
   const checkUserExists = (mobile: string): boolean => {
-    return !!MockDB.findUserByMobile(mobile);
+    // Using findUserByMobileSync for synchronous check as required by the interface
+    return !!DatabaseService.findUserByMobileSync(mobile);
   };
 
   const requestOtp = async (mobile: string): Promise<string> => {
@@ -57,7 +59,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
     
-    const foundUser = MockDB.findUserByMobile(mobile);
+    // Using findUserByMobileSync for the check
+    const foundUser = DatabaseService.findUserByMobileSync(mobile);
     if (foundUser) {
       setUser(foundUser);
       localStorage.setItem('agrifair_session', JSON.stringify(foundUser));
@@ -73,7 +76,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
 
-    if (MockDB.findUserByMobile(mobile)) {
+    // Using findUserByMobileSync for the check
+    if (DatabaseService.findUserByMobileSync(mobile)) {
       // User already exists
       return false;
     }
@@ -84,7 +88,8 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       mobile
     };
 
-    MockDB.createUser(newUser);
+    // DatabaseService.createUser is an async function
+    await DatabaseService.createUser(newUser);
     setUser(newUser);
     localStorage.setItem('agrifair_session', JSON.stringify(newUser));
     setActiveOtp(null); // Clear OTP after success

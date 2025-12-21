@@ -5,6 +5,14 @@ export interface User {
   mobile: string;
 }
 
+export interface FeaturedFarmer {
+  userId: string;
+  name: string;
+  bio: string;
+  photo: string; // Base64 string
+  date: string;
+}
+
 export interface Complaint {
   id: string;
   userId: string;

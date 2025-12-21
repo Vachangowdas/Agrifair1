@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
@@ -36,10 +37,24 @@ const Auth: React.FC = () => {
     setError('');
   }, [isLogin]);
 
+  const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const value = e.target.value.replace(/\D/g, ''); // Filter non-digits
+    if (value.length <= 10) {
+      setMobile(value);
+      if (error) setError('');
+    }
+  };
+
   const handleGetOtp = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!mobile) return;
     setError('');
+
+    // Strict 10-digit check
+    if (mobile.length !== 10) {
+      setError('Mobile number must be exactly 10 digits.');
+      return;
+    }
 
     // Logic Check 1: Login Mode - User MUST exist
     if (isLogin) {
@@ -192,9 +207,10 @@ const Auth: React.FC = () => {
               <Input 
                 label={t('auth_mobile')} 
                 value={mobile} 
-                onChange={e => setMobile(e.target.value)}
+                onChange={handleMobileChange}
                 type="tel"
                 placeholder="e.g. 9876543210"
+                maxLength={10}
                 required
               />
               <Button fullWidth type="submit" disabled={isLoading}>
@@ -220,7 +236,7 @@ const Auth: React.FC = () => {
               <Input 
                 label={t('auth_otp')} 
                 value={otp} 
-                onChange={e => setOtp(e.target.value)}
+                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
                 type="text"
                 maxLength={6}
                 placeholder="XXXXXX"

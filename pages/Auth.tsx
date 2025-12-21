@@ -5,7 +5,8 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Hash } from 'lucide-react';
+// Fixed: Added ArrowRight to the lucide-react imports to resolve the "Cannot find name 'ArrowRight'" error.
+import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Hash, Loader2, ArrowRight } from 'lucide-react';
 import { DatabaseService } from '../services/mockDb';
 
 const Auth: React.FC = () => {
@@ -37,6 +38,7 @@ const Auth: React.FC = () => {
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, ''); 
+    // Enforce max 10 characters
     if (value.length <= 10) {
       setMobile(value);
       if (error) setError('');
@@ -50,7 +52,7 @@ const Auth: React.FC = () => {
 
     // Strict 10-digit check
     if (mobile.length !== 10) {
-      setError('Mobile number must be exactly 10 digits.');
+      setError('Please enter exactly 10 digits.');
       return;
     }
 
@@ -113,86 +115,124 @@ const Auth: React.FC = () => {
                 <MessageSquare className="w-5 h-5 text-white" />
               </div>
               <div>
-                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">Messages • Now</p>
-                <p className="font-medium text-sm text-gray-200">AgriFair Code:</p>
-                <p className="text-2xl font-bold text-white tracking-widest mt-1">{demoOtpNotification}</p>
+                <p className="text-xs text-gray-400 font-semibold uppercase tracking-wider mb-1">SMS Gateway • Just Now</p>
+                <p className="font-medium text-sm text-gray-200">Your AgriFair Code is:</p>
+                <p className="text-3xl font-black text-white tracking-[0.3em] mt-1">{demoOtpNotification}</p>
               </div>
             </div>
-            <button onClick={() => setDemoOtpNotification(null)} className="text-gray-500 hover:text-white"><X size={20}/></button>
+            <button onClick={() => setDemoOtpNotification(null)} className="text-gray-500 hover:text-white p-1"><X size={18}/></button>
           </div>
         </div>
       )}
 
-      <div className="min-h-[80vh] flex items-center justify-center bg-gray-50 px-4">
-        <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-gray-100">
-          <div className="text-center mb-6">
-            <div className="bg-green-100 w-12 h-12 rounded-full flex items-center justify-center mx-auto mb-4">
-              <Smartphone className="w-6 h-6 text-green-600" />
+      <div className="min-h-[85vh] flex items-center justify-center bg-gray-50 px-4 py-12">
+        <div className="bg-white p-8 md:p-10 rounded-[2.5rem] shadow-2xl w-full max-w-md border border-gray-100 relative overflow-hidden">
+          {/* Decorative Background */}
+          <div className="absolute -top-24 -right-24 w-48 h-48 bg-green-50 rounded-full blur-3xl opacity-50"></div>
+          
+          <div className="text-center mb-8 relative z-10">
+            <div className="bg-green-100 w-16 h-16 rounded-2xl flex items-center justify-center mx-auto mb-6 shadow-inner">
+              <Smartphone className="w-8 h-8 text-green-600" />
             </div>
-            <h2 className="text-2xl font-bold text-green-800">
+            <h2 className="text-3xl font-black text-green-900 tracking-tight">
               {isLogin ? t('auth_login_title') : t('auth_signup_title')}
             </h2>
+            <p className="text-gray-500 text-sm mt-2">Access your fair price reports & history</p>
           </div>
 
           {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-lg mb-6 flex items-start text-sm">
-              <AlertCircle className="w-5 h-5 mr-2 flex-shrink-0" />
-              <span className="font-bold">{error}</span>
+            <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-4 rounded-2xl mb-8 flex items-start text-sm animate-shake">
+              <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0 mt-0.5" />
+              <div className="font-bold">{error}</div>
             </div>
           )}
 
           {!showOtp ? (
-            <form onSubmit={handleGetOtp}>
+            <form onSubmit={handleGetOtp} className="space-y-6">
                {!isLogin && (
-                <Input label={t('auth_username')} value={username} onChange={e => setUsername(e.target.value)} required />
+                <div className="relative">
+                  <Input 
+                    label={t('auth_username')} 
+                    value={username} 
+                    onChange={e => setUsername(e.target.value)} 
+                    placeholder="Enter your full name"
+                    required 
+                    className="h-14 rounded-2xl px-5 text-lg"
+                  />
+                </div>
               )}
-              <div className="relative">
+              <div className="relative group">
                 <Input 
                   label={t('auth_mobile')} 
                   value={mobile} 
                   onChange={handleMobileChange}
                   type="tel"
-                  placeholder="e.g. 9876543210"
+                  placeholder="9876543210"
                   maxLength={10}
                   required
+                  className="h-14 rounded-2xl px-5 text-lg font-mono tracking-widest"
                 />
-                <span className={`absolute right-3 top-9 text-[10px] font-bold ${mobile.length === 10 ? 'text-green-500' : 'text-gray-300'}`}>
-                  {mobile.length}/10
-                </span>
+                <div className="absolute right-4 top-10 flex items-center">
+                   <div className={`text-[10px] font-black px-2 py-1 rounded-full border transition-all ${mobile.length === 10 ? 'bg-green-100 border-green-200 text-green-700' : 'bg-gray-50 border-gray-200 text-gray-400'}`}>
+                      {mobile.length}/10
+                   </div>
+                </div>
               </div>
-              <Button fullWidth type="submit" disabled={isLoading}>
-                {isLoading ? 'Connecting to Database...' : t('auth_get_otp')}
+              <Button 
+                fullWidth 
+                type="submit" 
+                disabled={isLoading || mobile.length !== 10} 
+                className="h-14 rounded-2xl text-lg font-bold shadow-xl shadow-green-200"
+              >
+                {isLoading ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : t('auth_get_otp')}
               </Button>
             </form>
           ) : (
-            <form onSubmit={handleSubmit}>
+            <form onSubmit={handleSubmit} className="space-y-6">
               {otpSentMsg && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4 text-xs text-green-800">
-                  <CheckCircle className="inline w-3 h-3 mr-1" /> OTP sent to {mobile}. Check your messages.
+                <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-sm text-green-800 flex items-center shadow-sm">
+                  <CheckCircle className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" /> 
+                  <div>
+                    <span className="font-bold">Code Sent!</span> Check the toast notification above.
+                  </div>
                 </div>
               )}
-              <Input 
-                label={t('auth_otp')} 
-                value={otp} 
-                onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
-                type="text"
-                maxLength={6}
-                placeholder="XXXXXX"
-                required
-                className="text-center tracking-widest font-mono text-lg"
-              />
-              <Button fullWidth type="submit" disabled={isLoading}>
-                {isLoading ? 'Verifying...' : t('auth_verify')}
+              
+              <div className="text-center mb-4">
+                 <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-2">Verification Code</p>
+                 <Input 
+                  label="" 
+                  value={otp} 
+                  onChange={e => setOtp(e.target.value.replace(/\D/g, ''))}
+                  type="text"
+                  maxLength={6}
+                  placeholder="· · · · · ·"
+                  required
+                  className="text-center tracking-[1em] font-black text-2xl h-16 rounded-2xl bg-gray-50 border-2 border-green-100 focus:border-green-500"
+                />
+              </div>
+
+              <Button fullWidth type="submit" disabled={isLoading} className="h-14 rounded-2xl text-lg font-bold shadow-xl">
+                {isLoading ? <Loader2 className="w-6 h-6 animate-spin mx-auto" /> : t('auth_verify')}
               </Button>
+              
+              <button 
+                type="button"
+                onClick={() => { setShowOtp(false); setOtp(''); setDemoOtpNotification(null); }}
+                className="w-full text-center text-sm font-bold text-gray-400 hover:text-green-700 transition-colors"
+              >
+                Resend Code or Change Number
+              </button>
             </form>
           )}
 
-          <div className="mt-6 text-center pt-4 border-t border-gray-100">
+          <div className="mt-10 text-center pt-8 border-t border-gray-50">
             <button 
               onClick={() => setIsLogin(!isLogin)}
-              className="text-green-700 font-medium hover:underline text-sm"
+              className="text-green-700 font-bold hover:text-green-800 text-sm flex items-center justify-center mx-auto space-x-2 group"
             >
-              {isLogin ? t('auth_switch_signup') : t('auth_switch_login')}
+              <span>{isLogin ? t('auth_switch_signup') : t('auth_switch_login')}</span>
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         </div>

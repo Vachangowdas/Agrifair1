@@ -1,6 +1,6 @@
+
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User } from '../types';
-// Fixed import: MockDB was renamed to DatabaseService in the service file
 import { DatabaseService } from '../services/mockDb';
 
 interface AuthContextType {
@@ -9,8 +9,8 @@ interface AuthContextType {
   signup: (username: string, mobile: string, otp: string) => Promise<boolean>;
   logout: () => void;
   isAuthenticated: boolean;
-  requestOtp: (mobile: string) => Promise<string>; // Returns the generated OTP for demo purposes
-  checkUserExists: (mobile: string) => boolean;
+  requestOtp: (mobile: string) => Promise<string>; 
+  checkUserExists: (mobile: string) => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -20,7 +20,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [activeOtp, setActiveOtp] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check local storage for persistent session
     try {
       const storedUser = localStorage.getItem('agrifair_session');
       if (storedUser) {
@@ -32,53 +31,44 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
   }, []);
 
-  const checkUserExists = (mobile: string): boolean => {
-    // Using findUserByMobileSync for synchronous check as required by the interface
-    return !!DatabaseService.findUserByMobileSync(mobile);
+  const checkUserExists = async (mobile: string): Promise<boolean> => {
+    const found = await DatabaseService.findUserByMobile(mobile);
+    return !!found;
   };
 
   const requestOtp = async (mobile: string): Promise<string> => {
-    // Generate a random 6-digit OTP
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setActiveOtp(code);
     
-    // In a real production app, you would call your SMS gateway here.
-    // Example: await axios.post('/api/send-otp', { mobile, code });
-    
-    // For this demo, we log it to the console so the user can see it.
     console.log(`%c[SMS SERVICE] OTP for ${mobile}: ${code}`, 'color: #10B981; font-weight: bold; font-size: 16px; padding: 4px; border: 2px solid #10B981; border-radius: 4px;');
 
     return new Promise((resolve) => {
-      setTimeout(() => resolve(code), 1500); // Simulate network delay
+      setTimeout(() => resolve(code), 1500);
     });
   };
 
   const login = async (mobile: string, otp: string): Promise<boolean> => {
-    // Verify against the active OTP (or '1234' master code for easier testing)
     if ((!activeOtp || otp !== activeOtp) && otp !== '1234') {
       return false;
     }
     
-    // Using findUserByMobileSync for the check
-    const foundUser = DatabaseService.findUserByMobileSync(mobile);
+    const foundUser = await DatabaseService.findUserByMobile(mobile);
     if (foundUser) {
       setUser(foundUser);
       localStorage.setItem('agrifair_session', JSON.stringify(foundUser));
-      setActiveOtp(null); // Clear OTP after success
+      setActiveOtp(null);
       return true;
     }
     return false;
   };
 
   const signup = async (username: string, mobile: string, otp: string): Promise<boolean> => {
-    // Verify against the active OTP (or '1234' master code for easier testing)
     if ((!activeOtp || otp !== activeOtp) && otp !== '1234') {
       return false;
     }
 
-    // Using findUserByMobileSync for the check
-    if (DatabaseService.findUserByMobileSync(mobile)) {
-      // User already exists
+    const existingUser = await DatabaseService.findUserByMobile(mobile);
+    if (existingUser) {
       return false;
     }
 
@@ -88,11 +78,10 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       mobile
     };
 
-    // DatabaseService.createUser is an async function
     await DatabaseService.createUser(newUser);
     setUser(newUser);
     localStorage.setItem('agrifair_session', JSON.stringify(newUser));
-    setActiveOtp(null); // Clear OTP after success
+    setActiveOtp(null);
     return true;
   };
 

@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -6,7 +7,7 @@ import { DatabaseService } from '../services/mockDb';
 import { Complaint } from '../types';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { MessageSquare, Clock, CheckCircle } from 'lucide-react';
+import { MessageSquare, Clock, CheckCircle, Loader2 } from 'lucide-react';
 
 const ComplaintsPage: React.FC = () => {
   const { user } = useAuth();
@@ -14,12 +15,12 @@ const ComplaintsPage: React.FC = () => {
   const [complaints, setComplaints] = useState<Complaint[]>([]);
   const [traderName, setTraderName] = useState('');
   const [issue, setIssue] = useState('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Fixed: refreshComplaints is now async to match DatabaseService's implementation
   const refreshComplaints = async () => {
     if (user) {
       const data = await DatabaseService.getComplaintsByUserId(user.id);
-      setComplaints(data); // DatabaseService.getComplaintsByUserId already returns reversed list
+      setComplaints(data); 
     }
   };
 
@@ -28,13 +29,12 @@ const ComplaintsPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user]);
 
-  // Fixed: handleSubmit is now async to properly await createComplaint
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
 
-    const newComplaint: Complaint = {
-      id: Date.now().toString(),
+    setIsSubmitting(true);
+    const newComplaint: Omit<Complaint, 'id'> = {
       userId: user.id,
       traderName,
       issue,
@@ -42,12 +42,19 @@ const ComplaintsPage: React.FC = () => {
       status: 'Pending'
     };
 
-    // Await the database operation
-    await DatabaseService.createComplaint(newComplaint);
-    setTraderName('');
-    setIssue('');
-    alert("Complaint Registered Successfully");
-    refreshComplaints();
+    try {
+      // Supabase will generate the UUID automatically
+      await DatabaseService.createComplaint(newComplaint as Complaint);
+      setTraderName('');
+      setIssue('');
+      alert("Complaint Registered Successfully");
+      await refreshComplaints();
+    } catch (err) {
+      console.error("Failed to submit complaint:", err);
+      alert("Error submitting complaint. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -82,8 +89,8 @@ const ComplaintsPage: React.FC = () => {
               />
             </div>
 
-            <Button type="submit" variant="danger" fullWidth>
-              Register Official Complaint
+            <Button type="submit" variant="danger" fullWidth disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="w-5 h-5 animate-spin mx-auto" /> : 'Register Official Complaint'}
             </Button>
           </form>
         </div>

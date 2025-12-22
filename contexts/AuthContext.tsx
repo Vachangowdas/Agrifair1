@@ -72,17 +72,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
 
-    const newUser: User = {
-      id: Date.now().toString(),
+    // Omit 'id' to let Supabase generate a UUID
+    const userData = {
       username,
       mobile
     };
 
-    await DatabaseService.createUser(newUser);
-    setUser(newUser);
-    localStorage.setItem('agrifair_session', JSON.stringify(newUser));
-    setActiveOtp(null);
-    return true;
+    try {
+      await DatabaseService.createUser(userData as User);
+      // Re-fetch to get the generated ID
+      const createdUser = await DatabaseService.findUserByMobile(mobile);
+      if (createdUser) {
+        setUser(createdUser);
+        localStorage.setItem('agrifair_session', JSON.stringify(createdUser));
+        setActiveOtp(null);
+        return true;
+      }
+    } catch (err) {
+      console.error("Signup failed:", err);
+    }
+    return false;
   };
 
   const logout = () => {

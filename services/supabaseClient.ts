@@ -4,15 +4,21 @@ import { createClient } from '@supabase/supabase-js';
 const supabaseUrl = process.env.SUPABASE_URL;
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
 
+const isConfigured = Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl !== "");
+
 // Only initialize if we have the required credentials.
-// This prevents the "Uncaught Error: supabaseUrl is required" fatal error.
-export const supabase = (supabaseUrl && supabaseAnonKey) 
-  ? createClient(supabaseUrl, supabaseAnonKey) 
+export const supabase = isConfigured 
+  ? createClient(supabaseUrl!, supabaseAnonKey!) 
   : null;
 
 if (!supabase) {
-  console.warn(
-    'Supabase credentials missing. Database operations will be disabled. ' +
-    'Please set SUPABASE_URL and SUPABASE_ANON_KEY in your environment variables.'
+  console.info(
+    '%c[AgriFair] Database running in LOCAL STORAGE mode. Provide SUPABASE_URL and SUPABASE_ANON_KEY to enable cloud database.',
+    'color: #eab308; font-weight: bold;'
+  );
+} else {
+  console.info(
+    '%c[AgriFair] Database running in SUPABASE mode.',
+    'color: #16a34a; font-weight: bold;'
   );
 }

@@ -52,8 +52,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
     
-    const foundUser = await DatabaseService.findUserByMobile(mobile);
+    let foundUser = await DatabaseService.findUserByMobile(mobile);
     if (foundUser) {
+      // Authority Check: Master Admin account
+      if (mobile === '0000000000') {
+        foundUser.role = 'admin';
+      }
+      
       setUser(foundUser);
       localStorage.setItem('agrifair_session', JSON.stringify(foundUser));
       setActiveOtp(null);
@@ -72,15 +77,14 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       return false;
     }
 
-    // Omit 'id' to let Supabase generate a UUID
-    const userData = {
+    const userData: Partial<User> = {
       username,
-      mobile
+      mobile,
+      role: mobile === '0000000000' ? 'admin' : 'user'
     };
 
     try {
-      await DatabaseService.createUser(userData as User);
-      // Re-fetch to get the generated ID
+      await DatabaseService.createUser(userData);
       const createdUser = await DatabaseService.findUserByMobile(mobile);
       if (createdUser) {
         setUser(createdUser);

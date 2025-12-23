@@ -3,6 +3,7 @@ export interface User {
   id: string;
   username: string;
   mobile: string;
+  role?: 'admin' | 'user';
 }
 
 export interface FeaturedFarmer {

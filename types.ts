@@ -1,4 +1,5 @@
 
+
 export interface User {
   id: string;
   username: string;
@@ -7,6 +8,7 @@ export interface User {
 }
 
 export interface FeaturedFarmer {
+  id?: string;
   userId: string;
   name: string;
   bio: string;

@@ -5,8 +5,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-// Fixed: Added ArrowRight to the lucide-react imports to resolve the "Cannot find name 'ArrowRight'" error.
-import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Hash, Loader2, ArrowRight } from 'lucide-react';
+import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { DatabaseService } from '../services/mockDb';
 
 const Auth: React.FC = () => {
@@ -38,7 +37,6 @@ const Auth: React.FC = () => {
 
   const handleMobileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value.replace(/\D/g, ''); 
-    // Enforce max 10 characters
     if (value.length <= 10) {
       setMobile(value);
       if (error) setError('');
@@ -50,7 +48,6 @@ const Auth: React.FC = () => {
     if (!mobile) return;
     setError('');
 
-    // Strict 10-digit check
     if (mobile.length !== 10) {
       setError('Please enter exactly 10 digits.');
       return;
@@ -58,17 +55,17 @@ const Auth: React.FC = () => {
 
     setIsLoading(true);
     
-    // Check user existence via async DB service
+    // Check if user exists before sending OTP to avoid confusion
     const existingUser = await DatabaseService.findUserByMobile(mobile);
 
     if (isLogin && !existingUser) {
-      setError('Mobile number not registered.');
+      setError('Mobile number not registered. Please switch to Registration.');
       setIsLoading(false);
       return;
     } 
     
     if (!isLogin && existingUser) {
-      setError('User already registered. Please Login.');
+      setError('Account already exists. Please switch to Login.');
       setIsLoading(false);
       return;
     }
@@ -88,20 +85,22 @@ const Auth: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
     setError('');
-    let success = false;
+    
+    let result;
     
     if (isLogin) {
-      success = await login(mobile, otp);
+      result = await login(mobile, otp);
     } else {
-      success = await signup(username, mobile, otp);
+      result = await signup(username, mobile, otp);
     }
 
     setIsLoading(false);
-    if (success) {
+    
+    if (result.success) {
       setDemoOtpNotification(null);
       navigate('/calculator');
     } else {
-      setError("Invalid OTP or Verification Failed");
+      setError(result.message || "Verification Failed");
     }
   };
 
@@ -193,7 +192,8 @@ const Auth: React.FC = () => {
                 <div className="bg-green-50 border border-green-200 rounded-2xl p-4 mb-6 text-sm text-green-800 flex items-center shadow-sm">
                   <CheckCircle className="w-5 h-5 text-green-500 mr-3 flex-shrink-0" /> 
                   <div>
-                    <span className="font-bold">Code Sent!</span> Check the toast notification above.
+                    <span className="font-bold">Code Sent!</span><br/>
+                    <span className="text-xs text-green-600">Use <b className="font-mono">1234</b> or last 4 digits of number</span>
                   </div>
                 </div>
               )}

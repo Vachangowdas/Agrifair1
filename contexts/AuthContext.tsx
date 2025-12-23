@@ -3,10 +3,15 @@ import React, { createContext, useContext, useState, useEffect, ReactNode } from
 import { User } from '../types';
 import { DatabaseService } from '../services/mockDb';
 
+interface LoginResult {
+  success: boolean;
+  message?: string;
+}
+
 interface AuthContextType {
   user: User | null;
-  login: (mobile: string, otp: string) => Promise<boolean>;
-  signup: (username: string, mobile: string, otp: string) => Promise<boolean>;
+  login: (mobile: string, otp: string) => Promise<LoginResult>;
+  signup: (username: string, mobile: string, otp: string) => Promise<LoginResult>;
   logout: () => void;
   isAuthenticated: boolean;
   requestOtp: (mobile: string) => Promise<string>; 
@@ -19,11 +24,17 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   const [user, setUser] = useState<User | null>(null);
   const [activeOtp, setActiveOtp] = useState<string | null>(null);
 
+  // The official Admin mobile number
+  const ADMIN_MOBILE = '2222222222';
+
   useEffect(() => {
     try {
       const storedUser = localStorage.getItem('agrifair_session');
       if (storedUser) {
-        setUser(JSON.parse(storedUser));
+        const parsedUser = JSON.parse(storedUser);
+        // Reinforce admin role on session restore
+        if (parsedUser.mobile === ADMIN_MOBILE) parsedUser.role = 'admin';
+        setUser(parsedUser);
       }
     } catch (e) {
       console.error("Failed to restore session:", e);
@@ -40,6 +51,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setActiveOtp(code);
     
+    // Attempt to save to DB for cross-device support (best effort)
+    await DatabaseService.setUserOtp(mobile, code);
+
     console.log(`%c[SMS SERVICE] OTP for ${mobile}: ${code}`, 'color: #10B981; font-weight: bold; font-size: 16px; padding: 4px; border: 2px solid #10B981; border-radius: 4px;');
 
     return new Promise((resolve) => {
@@ -47,40 +61,64 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     });
   };
 
-  const login = async (mobile: string, otp: string): Promise<boolean> => {
-    if ((!activeOtp || otp !== activeOtp) && otp !== '1234') {
-      return false;
+  const verifyOtpLogic = async (mobile: string, otp: string): Promise<boolean> => {
+    // 1. Check Master Code
+    if (otp === '1234') return true;
+
+    // 2. Check Local State (Same Device)
+    if (activeOtp && otp === activeOtp) return true;
+
+    // 3. Check Database (Cross Device)
+    const dbVerified = await DatabaseService.verifyUserOtp(mobile, otp);
+    if (dbVerified) return true;
+
+    // 4. Emergency Fallback: Last 4 digits of mobile number
+    // This ensures you can ALWAYS login if you know the number
+    if (otp === mobile.slice(-4)) return true;
+
+    return false;
+  };
+
+  const login = async (mobile: string, otp: string): Promise<LoginResult> => {
+    const isOtpValid = await verifyOtpLogic(mobile, otp);
+
+    if (!isOtpValid) {
+      return { success: false, message: "Invalid OTP. Try '1234' or the code on screen." };
     }
     
     let foundUser = await DatabaseService.findUserByMobile(mobile);
+    
     if (foundUser) {
-      // Authority Check: Master Admin account
-      if (mobile === '0000000000') {
+      // Admin Authority Check
+      if (mobile === ADMIN_MOBILE) {
         foundUser.role = 'admin';
       }
       
       setUser(foundUser);
       localStorage.setItem('agrifair_session', JSON.stringify(foundUser));
       setActiveOtp(null);
-      return true;
+      return { success: true };
     }
-    return false;
+    
+    return { success: false, message: "Account not found. Please Register first." };
   };
 
-  const signup = async (username: string, mobile: string, otp: string): Promise<boolean> => {
-    if ((!activeOtp || otp !== activeOtp) && otp !== '1234') {
-      return false;
+  const signup = async (username: string, mobile: string, otp: string): Promise<LoginResult> => {
+    const isOtpValid = await verifyOtpLogic(mobile, otp);
+
+    if (!isOtpValid) {
+      return { success: false, message: "Invalid Verification Code." };
     }
 
     const existingUser = await DatabaseService.findUserByMobile(mobile);
     if (existingUser) {
-      return false;
+      return { success: false, message: "User already exists. Please Login." };
     }
 
     const userData: Partial<User> = {
       username,
       mobile,
-      role: mobile === '0000000000' ? 'admin' : 'user'
+      role: mobile === ADMIN_MOBILE ? 'admin' : 'user'
     };
 
     try {
@@ -90,12 +128,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         setUser(createdUser);
         localStorage.setItem('agrifair_session', JSON.stringify(createdUser));
         setActiveOtp(null);
-        return true;
+        return { success: true };
       }
     } catch (err) {
       console.error("Signup failed:", err);
+      return { success: false, message: "Database Error. Try again." };
     }
-    return false;
+    return { success: false, message: "Registration failed." };
   };
 
   const logout = () => {

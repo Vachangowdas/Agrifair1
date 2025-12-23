@@ -3,7 +3,14 @@ import { User, Complaint, FeaturedFarmer } from '../types';
 import { supabase } from './supabaseClient';
 
 // Helper for local storage fallbacks
-const getLocal = <T>(key: string): T[] => JSON.parse(localStorage.getItem(key) || '[]');
+const getLocal = <T>(key: string): T[] => {
+  try {
+    return JSON.parse(localStorage.getItem(key) || '[]');
+  } catch (e) {
+    return [];
+  }
+};
+
 const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
 
 // Simple UUID generator for local mode
@@ -42,10 +49,40 @@ export const DatabaseService = {
       }
     } else {
       const users = getLocal<User>('agrifair_users');
-      const newUser = { ...user, id: generateId() } as User;
+      const newUser = { ...user, id: user.id || generateId() } as User;
       users.push(newUser);
       setLocal('agrifair_users', users);
     }
+  },
+
+  // NEW: OTP Operations for Cross-Device Login
+  setUserOtp: async (mobile: string, otp: string): Promise<void> => {
+    if (supabase) {
+      // Try to update the 'otp' column. Note: This column must exist in your Supabase 'users' table.
+      // If it doesn't exist, this might fail silently or throw, but we catch it in AuthContext.
+      try {
+        await supabase.from('users').update({ otp_code: otp }).eq('mobile', mobile);
+      } catch (e) {
+        console.warn("[Supabase] Could not save OTP to DB (Column might be missing). Fallback to local state.");
+      }
+    }
+    // Local storage doesn't need this as local state handles single-device
+  },
+
+  verifyUserOtp: async (mobile: string, otp: string): Promise<boolean> => {
+    if (supabase) {
+      const { data } = await supabase
+        .from('users')
+        .select('otp_code')
+        .eq('mobile', mobile)
+        .maybeSingle();
+      
+      // If DB has the code and it matches
+      if (data && data.otp_code && String(data.otp_code) === String(otp)) {
+        return true;
+      }
+    }
+    return false;
   },
 
   // Complaint Operations
@@ -54,7 +91,7 @@ export const DatabaseService = {
       const { data, error } = await supabase
         .from('complaints')
         .select('*')
-        .eq('userId', userId)
+        .or(`userId.eq.${userId},user_id.eq.${userId}`)
         .order('date', { ascending: false });
       
       if (error) {
@@ -98,7 +135,14 @@ export const DatabaseService = {
         console.error('[Supabase] Error fetching featured farmers:', error.message);
         return [];
       }
-      return data as FeaturedFarmer[];
+      return (data || []).map(item => ({
+        id: item.id,
+        userId: item.userId || item.user_id,
+        name: item.name,
+        bio: item.bio,
+        photo: item.photo,
+        date: item.date
+      })) as FeaturedFarmer[];
     } else {
       return getLocal<FeaturedFarmer>('agrifair_featured');
     }
@@ -106,9 +150,14 @@ export const DatabaseService = {
 
   upsertFeaturedFarmer: async (farmer: FeaturedFarmer): Promise<void> => {
     if (supabase) {
+      const payload = {
+        ...farmer,
+        user_id: farmer.userId
+      };
+      
       const { error } = await supabase
         .from('featured_farmers')
-        .upsert(farmer);
+        .upsert(payload);
       
       if (error) {
         console.error('[Supabase] Error upserting farmer:', error.message);
@@ -126,21 +175,21 @@ export const DatabaseService = {
     }
   },
 
-  deleteFeaturedFarmer: async (userId: string): Promise<void> => {
+  deleteFeaturedFarmer: async (identifier: string): Promise<void> => {
     if (supabase) {
       const { error } = await supabase
         .from('featured_farmers')
         .delete()
-        .eq('userId', userId);
+        .or(`id.eq.${identifier},userId.eq.${identifier},user_id.eq.${identifier}`);
       
       if (error) {
         console.error('[Supabase] Error deleting farmer:', error.message);
         throw error;
       }
-    } else {
-      const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-      const filtered = farmers.filter(f => f.userId !== userId);
-      setLocal('agrifair_featured', filtered);
-    }
+    } 
+    
+    const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
+    const filtered = farmers.filter(f => f.userId !== identifier && f.id !== identifier);
+    setLocal('agrifair_featured', filtered);
   }
 };

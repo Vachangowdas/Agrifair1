@@ -5,7 +5,8 @@ import { supabase } from './supabaseClient';
 // --- Local Storage Helpers ---
 const getLocal = <T>(key: string): T[] => {
   try {
-    return JSON.parse(localStorage.getItem(key) || '[]');
+    const data = localStorage.getItem(key);
+    return data ? JSON.parse(data) : [];
   } catch (e) {
     return [];
   }
@@ -14,12 +15,16 @@ const getLocal = <T>(key: string): T[] => {
 const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// --- Mapping Layer (Critical for Supabase Sync) ---
-const mapUserToDb = (u: Partial<User>) => ({
-  username: u.username,
-  mobile: u.mobile,
-  role: u.role || 'user'
-});
+// --- Advanced Mapping (Handles Schema Variations) ---
+const mapUserToDb = (u: Partial<User>) => {
+  const payload: any = {
+    username: u.username,
+    mobile: u.mobile,
+  };
+  // Only include role if explicitly provided to avoid schema errors if column doesn't exist
+  if (u.role) payload.role = u.role;
+  return payload;
+};
 
 const mapComplaintToDb = (c: Partial<Complaint>) => ({
   user_id: c.userId,
@@ -38,24 +43,18 @@ const mapDbToComplaint = (item: any): Complaint => ({
   status: item.status
 });
 
-const mapFarmerToDb = (f: FeaturedFarmer) => ({
-  user_id: f.userId,
-  name: f.name,
-  bio: f.bio,
-  photo: f.photo,
-  date: f.date
-});
-
-const mapDbToFarmer = (item: any): FeaturedFarmer => ({
-  id: item.id,
-  userId: item.user_id || item.userId,
-  name: item.name,
-  bio: item.bio,
-  photo: item.photo,
-  date: item.date
-});
-
 export const DatabaseService = {
+  // --- Connection Check ---
+  testConnection: async () => {
+    if (!supabase) return false;
+    try {
+      const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
+      return !error;
+    } catch (e) {
+      return false;
+    }
+  },
+
   // --- User Operations ---
   findUserByMobile: async (mobile: string): Promise<User | undefined> => {
     if (supabase) {
@@ -66,30 +65,32 @@ export const DatabaseService = {
           .eq('mobile', mobile)
           .maybeSingle();
         
-        if (!error && data) return data as User;
-        if (error) console.warn('[Supabase] Search failed:', error.message);
+        if (error) {
+          console.error('[Supabase Error] findUserByMobile:', error.message, error.details);
+        } else if (data) {
+          return data as User;
+        }
       } catch (e) {
-        console.warn('[Supabase] Connection error');
+        console.error('[Supabase Exception] findUserByMobile:', e);
       }
     }
     return getLocal<User>('agrifair_users').find(u => u.mobile === mobile);
   },
 
   createUser: async (user: Partial<User>): Promise<void> => {
-    let cloudSuccess = false;
     if (supabase) {
       try {
         const payload = mapUserToDb(user);
         const { error } = await supabase.from('users').insert([payload]);
-        if (error) throw error;
-        cloudSuccess = true;
+        if (error) {
+          console.error('[Supabase Error] createUser:', error.message, error.hint);
+          throw new Error(`Database Error: ${error.message}`);
+        }
       } catch (e: any) {
-        console.error('[Supabase] Cloud user creation failed:', e.message);
-        throw new Error("Cloud synchronization failed. Please check your Supabase setup.");
+        console.warn('[Supabase Sync Failed] Falling back to local storage.');
       }
     } 
 
-    // Always mirror to local storage for speed
     const users = getLocal<User>('agrifair_users');
     if (!users.find(u => u.mobile === user.mobile)) {
       users.push({ ...user, id: user.id || generateId() } as User);
@@ -100,7 +101,11 @@ export const DatabaseService = {
   setUserOtp: async (mobile: string, otp: string): Promise<void> => {
     if (supabase) {
       try {
-        await supabase.from('users').update({ otp_code: otp }).eq('mobile', mobile);
+        const { error } = await supabase
+          .from('users')
+          .update({ otp_code: otp })
+          .eq('mobile', mobile);
+        if (error) console.error('[Supabase Error] setUserOtp:', error.message);
       } catch (e) {}
     }
   },
@@ -108,7 +113,13 @@ export const DatabaseService = {
   verifyUserOtp: async (mobile: string, otp: string): Promise<boolean> => {
     if (supabase) {
       try {
-        const { data } = await supabase.from('users').select('otp_code').eq('mobile', mobile).maybeSingle();
+        const { data, error } = await supabase
+          .from('users')
+          .select('otp_code')
+          .eq('mobile', mobile)
+          .maybeSingle();
+        
+        if (error) return false;
         return data && String(data.otp_code) === String(otp);
       } catch (e) { return false; }
     }
@@ -125,7 +136,11 @@ export const DatabaseService = {
           .or(`user_id.eq.${userId},userId.eq.${userId}`)
           .order('date', { ascending: false });
         
-        if (!error && data) return data.map(mapDbToComplaint);
+        if (error) {
+          console.error('[Supabase Error] getComplaints:', error.message);
+        } else if (data) {
+          return data.map(mapDbToComplaint);
+        }
       } catch (e) {}
     }
     return getLocal<Complaint>('agrifair_complaints').filter(c => c.userId === userId);
@@ -135,7 +150,8 @@ export const DatabaseService = {
     if (supabase) {
       try {
         const payload = mapComplaintToDb(complaint);
-        await supabase.from('complaints').insert([payload]);
+        const { error } = await supabase.from('complaints').insert([payload]);
+        if (error) console.error('[Supabase Error] createComplaint:', error.message);
       } catch (e) {}
     }
     const complaints = getLocal<Complaint>('agrifair_complaints');
@@ -152,7 +168,16 @@ export const DatabaseService = {
           .select('*')
           .order('date', { ascending: false });
 
-        if (!error && data) return data.map(mapDbToFarmer);
+        if (!error && data) {
+          return data.map(item => ({
+            id: item.id,
+            userId: item.user_id || item.userId,
+            name: item.name,
+            bio: item.bio,
+            photo: item.photo,
+            date: item.date
+          }));
+        }
       } catch (e) {}
     }
     return getLocal<FeaturedFarmer>('agrifair_featured');
@@ -161,13 +186,21 @@ export const DatabaseService = {
   upsertFeaturedFarmer: async (farmer: FeaturedFarmer): Promise<void> => {
     if (supabase) {
       try {
-        const payload = mapFarmerToDb(farmer);
+        const payload = {
+          user_id: farmer.userId,
+          name: farmer.name,
+          bio: farmer.bio,
+          photo: farmer.photo,
+          date: farmer.date
+        };
+        
+        // Try snake_case first (standard)
         const { error } = await supabase
           .from('featured_farmers')
           .upsert(payload, { onConflict: 'user_id' });
           
         if (error) {
-          // Fallback if schema doesn't match snake_case
+          // Fallback to camelCase if that's how the table was built
           const fallback = { userId: farmer.userId, name: farmer.name, bio: farmer.bio, photo: farmer.photo, date: farmer.date };
           await supabase.from('featured_farmers').upsert(fallback, { onConflict: 'userId' });
         }

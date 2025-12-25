@@ -4,7 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { SupportedLanguage } from '../types';
-import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown } from 'lucide-react';
+import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Database, Cloud, WifiOff } from 'lucide-react';
+import { supabase } from '../services/supabaseClient';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();
@@ -29,14 +30,29 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     }
   };
 
+  const isCloud = !!supabase;
+
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
       <nav className="bg-green-800 shadow-lg sticky top-0 z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => navigate('/')}>
-              <Sprout className="h-8 w-8 text-yellow-400 mr-2" />
-              <span className="font-bold text-xl text-white tracking-wide">AgriFair</span>
+              <Sprout className={`h-8 w-8 mr-2 transition-colors duration-500 ${isCloud ? 'text-yellow-400' : 'text-green-400 opacity-50'}`} />
+              <div className="flex flex-col">
+                <span className="font-bold text-xl text-white tracking-wide leading-none">AgriFair</span>
+                <div className="flex items-center mt-1">
+                   {isCloud ? (
+                     <div className="flex items-center text-[8px] text-green-300 font-bold uppercase tracking-widest bg-green-900/50 px-1.5 py-0.5 rounded">
+                       <Cloud className="w-2 h-2 mr-1" /> Cloud Sync
+                     </div>
+                   ) : (
+                     <div className="flex items-center text-[8px] text-yellow-300 font-bold uppercase tracking-widest bg-yellow-900/50 px-1.5 py-0.5 rounded">
+                       <WifiOff className="w-2 h-2 mr-1" /> Local Mode
+                     </div>
+                   )}
+                </div>
+              </div>
             </div>
             
             <div className="hidden md:block">
@@ -111,6 +127,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                     <div className="flex items-center font-medium">
                       <UserIcon className="w-3 h-3 mr-1" />
                       {user.username}
+                      {user.role === 'admin' && <span className="ml-1 text-[8px] bg-yellow-500 text-green-900 px-1 rounded font-black">ADMIN</span>}
                     </div>
                     <span className="text-xs text-green-300 opacity-80">{user.mobile}</span>
                   </div>
@@ -168,7 +185,10 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                 <>
                   <div className="px-3 py-2 border-t border-green-600 mt-2 mb-2">
                      <p className="text-green-200 text-xs uppercase font-semibold mb-1">Signed in as:</p>
-                     <p className="text-white font-medium">{user.username}</p>
+                     <p className="text-white font-medium">
+                       {user.username}
+                       {user.role === 'admin' && <span className="ml-2 text-[10px] bg-yellow-400 text-green-900 px-1 rounded font-bold">ADMIN</span>}
+                     </p>
                      <p className="text-green-300 text-sm">{user.mobile}</p>
                   </div>
                   <Link to="/calculator" onClick={() => setIsMenuOpen(false)} className="text-white hover:bg-green-600 block px-3 py-2 rounded-md text-base font-medium">

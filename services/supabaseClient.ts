@@ -1,24 +1,34 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+// Support both standard and Vercel-specific environment variable prefixes
+const supabaseUrl = process.env.SUPABASE_URL || "";
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 
-const isConfigured = Boolean(supabaseUrl && supabaseAnonKey && supabaseUrl !== "");
+const isConfigured = Boolean(
+  supabaseUrl && 
+  supabaseAnonKey && 
+  supabaseUrl.startsWith('http') &&
+  supabaseAnonKey.length > 20
+);
 
-// Only initialize if we have the required credentials.
 export const supabase = isConfigured 
-  ? createClient(supabaseUrl!, supabaseAnonKey!) 
+  ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
+
+export const getDbStatus = () => ({
+  isCloud: !!supabase,
+  url: supabaseUrl ? `${supabaseUrl.substring(0, 15)}...` : 'Not Configured'
+});
 
 if (!supabase) {
   console.info(
-    '%c[AgriFair] Database running in LOCAL STORAGE mode. Provide SUPABASE_URL and SUPABASE_ANON_KEY to enable cloud database.',
-    'color: #eab308; font-weight: bold; padding: 4px;'
+    '%c[AgriFair] LOCAL MODE: Supabase variables missing in Vercel/Env.',
+    'color: #eab308; font-weight: bold; background: #fffbeb; padding: 4px; border-radius: 4px;'
   );
 } else {
   console.info(
-    '%c[AgriFair] Database running in SUPABASE mode. Sync Enabled.',
-    'color: #16a34a; font-weight: bold; padding: 4px;'
+    '%c[AgriFair] CLOUD MODE: Supabase Connected.',
+    'color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px; border-radius: 4px;'
   );
 }

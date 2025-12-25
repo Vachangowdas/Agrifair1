@@ -203,17 +203,17 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
           .upsert(payload, { onConflict: 'user_id' });
         
         if (error) {
-          console.warn("[AgriFair] Cloud Sync Error (Schema mismatch?):", error.message);
+          console.warn("[AgriFair] Cloud Sync Error:", error.message);
         } else {
           syncSuccess = true;
         }
       }
     } catch (e) {
-      console.warn("[AgriFair] Cloud operation failed, falling back to local storage.", e);
+      console.warn("[AgriFair] Cloud sync failed silently:", e);
     }
   }
   
-  // 3. Update Local Storage (Always do this as fallback)
+  // 3. Update Local Storage (Primary Source of Truth for the UI)
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId || (finalCloudId && String(f.userId) === finalCloudId));
   const localFarmer = { ...farmer, userId: finalCloudId || sUserId };

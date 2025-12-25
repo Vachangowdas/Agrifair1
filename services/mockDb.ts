@@ -183,17 +183,31 @@ export const DatabaseService = {
     if (supabase) {
       try {
         // Clean Payload: Use snake_case for DB, remove camelCase 'userId'
-        const payload = {
+        let payload: any = {
           user_id: farmer.userId,
           name: farmer.name,
           bio: farmer.bio,
           photo: farmer.photo,
           date: farmer.date,
-          // Only include ID if it exists (for updates)
-          ...(farmer.id ? { id: farmer.id } : {})
         };
+
+        // If we don't have an ID (e.g. from new device), try to find the existing record first
+        // so we don't create a duplicate or fail unique constraints silently.
+        if (!farmer.id) {
+           const { data: existing } = await supabase
+            .from('featured_farmers')
+            .select('id')
+            .eq('user_id', farmer.userId)
+            .maybeSingle();
+            
+           if (existing?.id) {
+             payload.id = existing.id;
+           }
+        } else {
+           payload.id = farmer.id;
+        }
         
-        const { error } = await supabase.from('featured_farmers').upsert(payload);
+        const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
         if (error) console.error('[Supabase] Upsert failed:', error.message);
         
       } catch (e) { console.warn('[Supabase] Upsert exception:', e); }

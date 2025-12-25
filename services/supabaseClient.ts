@@ -1,7 +1,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 
-// Support both standard and Vercel-specific environment variable prefixes
+// Environment variables are injected via vite.config.ts
 const supabaseUrl = process.env.SUPABASE_URL || "";
 const supabaseAnonKey = process.env.SUPABASE_ANON_KEY || "";
 
@@ -17,15 +17,16 @@ export const supabase = isConfigured
   : null;
 
 if (!supabase) {
-  console.warn(
-    '[AgriFair] Supabase is NOT configured. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set in Vercel environment variables.'
+  console.error(
+    '[AgriFair Error] Supabase is NOT connected. Please check your Environment Variables (SUPABASE_URL, SUPABASE_ANON_KEY).'
   );
 } else {
-  console.log('[AgriFair] Supabase client initialized successfully.');
+  console.log('[AgriFair] Supabase connection established.');
 }
 
 export const getDbStatus = () => ({
   isCloud: !!supabase,
-  hasUrl: !!supabaseUrl,
-  hasKey: !!supabaseAnonKey
+  urlSet: !!supabaseUrl,
+  keySet: !!supabaseAnonKey,
+  urlValid: supabaseUrl.startsWith('http')
 });

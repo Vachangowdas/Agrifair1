@@ -4,8 +4,8 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { SupportedLanguage } from '../types';
-import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Database, Cloud, WifiOff } from 'lucide-react';
-import { supabase } from '../services/supabaseClient';
+import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Cloud, WifiOff, AlertCircle } from 'lucide-react';
+import { supabase, getDbStatus } from '../services/supabaseClient';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();
@@ -14,6 +14,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
   const navigate = useNavigate();
   const [isMenuOpen, setIsMenuOpen] = React.useState(false);
   const [isLangDropdownOpen, setIsLangDropdownOpen] = useState(false);
+  const [showDbStatus, setShowDbStatus] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -30,7 +31,7 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
     }
   };
 
-  const isCloud = !!supabase;
+  const dbStatus = getDbStatus();
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -38,11 +39,15 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center cursor-pointer" onClick={() => navigate('/')}>
-              <Sprout className={`h-8 w-8 mr-2 transition-colors duration-500 ${isCloud ? 'text-yellow-400' : 'text-green-400 opacity-50'}`} />
-              <div className="flex flex-col">
+              <Sprout className={`h-8 w-8 mr-2 transition-colors duration-500 ${dbStatus.isCloud ? 'text-yellow-400' : 'text-green-400 opacity-50'}`} />
+              <div className="flex flex-col relative group">
                 <span className="font-bold text-xl text-white tracking-wide leading-none">AgriFair</span>
-                <div className="flex items-center mt-1">
-                   {isCloud ? (
+                <div 
+                  className="flex items-center mt-1 cursor-help"
+                  onMouseEnter={() => setShowDbStatus(true)}
+                  onMouseLeave={() => setShowDbStatus(false)}
+                >
+                   {dbStatus.isCloud ? (
                      <div className="flex items-center text-[8px] text-green-300 font-bold uppercase tracking-widest bg-green-900/50 px-1.5 py-0.5 rounded">
                        <Cloud className="w-2 h-2 mr-1" /> Cloud Sync
                      </div>
@@ -52,6 +57,21 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                      </div>
                    )}
                 </div>
+
+                {/* Status Diagnostic Tooltip */}
+                {showDbStatus && (
+                  <div className="absolute top-full left-0 mt-2 w-64 bg-slate-800 text-white text-[10px] p-3 rounded-xl shadow-2xl z-[60] border border-slate-700">
+                    <p className="font-black mb-2 border-b border-slate-700 pb-1 text-yellow-400">DB CONNECTION STATUS</p>
+                    <ul className="space-y-1">
+                      <li className="flex justify-between"><span>Supabase Client:</span> <span className={dbStatus.isCloud ? 'text-green-400' : 'text-red-400'}>{dbStatus.isCloud ? 'ACTIVE' : 'FAILED'}</span></li>
+                      <li className="flex justify-between"><span>SUPABASE_URL:</span> <span className={dbStatus.urlSet ? 'text-green-400' : 'text-red-400'}>{dbStatus.urlSet ? 'LOADED' : 'MISSING'}</span></li>
+                      <li className="flex justify-between"><span>ANON_KEY:</span> <span className={dbStatus.keySet ? 'text-green-400' : 'text-red-400'}>{dbStatus.keySet ? 'LOADED' : 'MISSING'}</span></li>
+                    </ul>
+                    {!dbStatus.isCloud && (
+                      <p className="mt-2 text-red-300 italic">Check Vercel env vars or run the provided SQL script in Supabase dashboard.</p>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
             
@@ -79,7 +99,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
             </div>
 
             <div className="hidden md:flex items-center space-x-4">
-               {/* Language Dropdown */}
                <div className="relative">
                   <button 
                     onClick={() => setIsLangDropdownOpen(!isLangDropdownOpen)}
@@ -92,19 +111,13 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
                   
                   {isLangDropdownOpen && (
                     <>
-                      <div 
-                        className="fixed inset-0 z-10" 
-                        onClick={() => setIsLangDropdownOpen(false)}
-                      ></div>
+                      <div className="fixed inset-0 z-10" onClick={() => setIsLangDropdownOpen(false)}></div>
                       <div className="absolute right-0 mt-2 w-48 bg-white rounded-lg shadow-xl z-20 overflow-hidden ring-1 ring-black ring-opacity-5">
                         <div className="py-1">
                           {Object.values(SupportedLanguage).map((lang) => (
                             <button
                               key={lang}
-                              onClick={() => {
-                                setLanguage(lang);
-                                setIsLangDropdownOpen(false);
-                              }}
+                              onClick={() => { setLanguage(lang); setIsLangDropdownOpen(false); }}
                               className={`w-full text-left px-4 py-3 text-sm transition-colors flex items-center justify-between ${
                                 language === lang 
                                   ? 'bg-green-50 text-green-800 font-bold' 
@@ -151,7 +164,6 @@ export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) =>
           </div>
         </div>
 
-        {/* Mobile menu */}
         {isMenuOpen && (
           <div className="md:hidden bg-green-700">
             <div className="px-2 pt-2 pb-3 space-y-1 sm:px-3">

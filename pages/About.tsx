@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { FeaturedFarmer } from '../types';
-import { Quote, User as UserIcon, Camera, Upload, Trash2, ShieldCheck, Loader2, Pencil, X, Save, AlertCircle } from 'lucide-react';
+import { Quote, User as UserIcon, Camera, Upload, Trash2, ShieldCheck, Loader2, Pencil, X, Save, AlertCircle, Info } from 'lucide-react';
 import { Button } from '../components/Button';
 import { DatabaseService } from '../services/mockDb';
 
@@ -13,10 +13,11 @@ const About: React.FC = () => {
   const [featuredFarmers, setFeaturedFarmers] = useState<FeaturedFarmer[]>([]);
   const [bio, setBio] = useState('');
   const [photo, setPhoto] = useState<string | null>(null);
-  const [isUploading, setIsUploading] = useState(false);
   const [isLoadingFarmers, setIsLoadingFarmers] = useState(true);
   const [isActionPending, setIsActionPending] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [warningMsg, setWarningMsg] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBio, setEditBio] = useState('');
@@ -26,10 +27,8 @@ const About: React.FC = () => {
   const fetchFarmers = async () => {
     setIsLoadingFarmers(true);
     try {
-      if (DatabaseService && typeof DatabaseService.getAllFeaturedFarmers === 'function') {
-        const data = await DatabaseService.getAllFeaturedFarmers();
-        setFeaturedFarmers(data || []);
-      }
+      const data = await DatabaseService.getAllFeaturedFarmers();
+      setFeaturedFarmers(data || []);
     } catch (err) {
       console.error("Failed to fetch farmers:", err);
     } finally {
@@ -63,7 +62,7 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.5)); 
+            resolve(canvas.toDataURL('image/jpeg', 0.6)); 
           } else { reject(new Error("Processing error")); }
         };
         img.onerror = (error) => reject(error);
@@ -80,7 +79,7 @@ const About: React.FC = () => {
         setPhoto(compressedBase64);
         setErrorMsg(null);
       } catch (err) {
-        setErrorMsg("Image too large or invalid.");
+        setErrorMsg("Image processing failed.");
       }
     }
   };
@@ -88,14 +87,15 @@ const About: React.FC = () => {
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
+    setWarningMsg(null);
 
     if (!user || !user.id || !user.mobile) {
-      setErrorMsg("Session error. Please logout and login again.");
+      setErrorMsg("Please login to share your story.");
       return;
     }
 
     if (!photo || !bio) {
-      setErrorMsg("Photo and Bio are required.");
+      setErrorMsg("Both photo and bio are required.");
       return;
     }
 
@@ -109,27 +109,24 @@ const About: React.FC = () => {
     };
 
     try {
-      const confirmedCloudId = await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
+      const resultId = await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
       
-      // If we got a Cloud ID back and it's different from local, patch the session
-      if (confirmedCloudId && confirmedCloudId !== user.id) {
-        const updatedUser = { ...user, id: confirmedCloudId };
-        localStorage.setItem('agrifair_session', JSON.stringify(updatedUser));
-        // Note: Full reload or state lifting would be ideal, but for now this fixes the persistence
+      if (!resultId) {
+        setWarningMsg("Story saved locally, but Cloud Sync is offline or misconfigured. Check Supabase SQL.");
       }
 
       await fetchFarmers();
       setBio(''); setPhoto(null); setIsUploading(false);
-      alert("Success! Your story is live.");
+      if (resultId) alert("Your story has been published!");
     } catch (err: any) {
-      setErrorMsg(err.message || "Upload failed. Try again.");
+      setErrorMsg("Could not save story. Please check your connection.");
     } finally {
       setIsActionPending(false);
     }
   };
 
   const handleDeleteProfile = async (targetUserId: string) => {
-    if (!confirm("Remove this entry?")) return;
+    if (!confirm("Delete this story?")) return;
     setIsActionPending(true);
     try {
       await DatabaseService.deleteFeaturedFarmer(targetUserId);
@@ -159,26 +156,22 @@ const About: React.FC = () => {
     }
   };
 
-  const isAdmin = user?.role === 'admin';
-
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
-       {/* Page Heading */}
        <div className="text-center mb-16">
           <h1 className="text-4xl md:text-5xl font-extrabold text-green-900 mb-4">{t('about_title')}</h1>
           <div className="w-24 h-1.5 bg-yellow-500 mx-auto mb-6 rounded-full"></div>
           <p className="text-xl text-gray-600 max-w-3xl mx-auto leading-relaxed">{t('about_mission')}</p>
        </div>
 
-       {/* Community Spotlight Section */}
        <section className="bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-green-50 mb-20 relative overflow-hidden">
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 relative z-10">
              <div className="max-w-xl">
                 <h2 className="text-4xl font-black text-green-900 mb-4 tracking-tight">Community Spotlight</h2>
-                <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join our wall of success.</p>
+                <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation.</p>
              </div>
              {user && (
-               <Button onClick={() => { setIsUploading(!isUploading); setErrorMsg(null); }} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
+               <Button onClick={() => { setIsUploading(!isUploading); setErrorMsg(null); setWarningMsg(null); }} className="flex items-center h-14 px-8 rounded-2xl shadow-xl">
                  <Camera className="w-5 h-5 mr-2" /> 
                  {isUploading ? 'Cancel' : 'Share My Story'}
                </Button>
@@ -188,16 +181,23 @@ const About: React.FC = () => {
           {isUploading && user && (
             <div className="bg-green-50 rounded-3xl p-8 mb-16 border border-green-100 animate-slide-up shadow-inner">
                <div className="flex items-center mb-8">
-                 <div className="bg-green-600 p-3 rounded-2xl mr-4 shadow-lg shadow-green-200">
+                 <div className="bg-green-600 p-3 rounded-2xl mr-4 shadow-lg">
                     <Upload className="w-6 h-6 text-white" />
                  </div>
                  <h3 className="font-black text-green-900 text-2xl">Your Success Story</h3>
                </div>
                
                {errorMsg && (
-                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 flex items-center text-sm">
+                 <div className="bg-red-100 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 flex items-center text-sm animate-shake">
                     <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
                     <span className="font-bold">{errorMsg}</span>
+                 </div>
+               )}
+
+               {warningMsg && (
+                 <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 px-4 py-3 rounded-xl mb-6 flex items-center text-sm">
+                    <Info className="w-5 h-5 mr-3 flex-shrink-0" />
+                    <span>{warningMsg}</span>
                  </div>
                )}
 
@@ -211,7 +211,7 @@ const About: React.FC = () => {
                        <img src={photo} className="w-full h-full object-cover" alt="Preview" />
                      ) : (
                        <div className="text-center p-6">
-                         <Camera className="w-14 h-14 text-green-200 mx-auto mb-4 group-hover:scale-110 group-hover:text-green-400 transition-all" />
+                         <Camera className="w-14 h-14 text-green-200 mx-auto mb-4" />
                          <span className="text-xs text-green-600 font-black uppercase tracking-widest">Add Portrait</span>
                        </div>
                      )}
@@ -224,7 +224,7 @@ const About: React.FC = () => {
                      <label className="block text-xs font-black text-green-800 mb-3 uppercase tracking-widest opacity-60">Your Experience (Max 300 chars)</label>
                      <textarea 
                        className="w-full p-6 border-2 border-green-100 rounded-3xl h-44 text-lg focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none resize-none transition-all" 
-                       placeholder="Tell us how AgriFair helped your farm..." 
+                       placeholder="How did AgriFair help you?" 
                        value={bio} 
                        onChange={(e) => setBio(e.target.value)} 
                        required 
@@ -232,7 +232,7 @@ const About: React.FC = () => {
                      />
                    </div>
                    <div className="mt-8 flex justify-end">
-                     <Button type="submit" disabled={!photo || !bio || isActionPending} className="px-12 h-14 text-lg rounded-2xl shadow-xl shadow-green-200">
+                     <Button type="submit" disabled={!photo || !bio || isActionPending} className="px-12 h-14 text-lg rounded-2xl shadow-xl">
                        {isActionPending ? <Loader2 className="animate-spin" /> : 'Publish Story'}
                      </Button>
                    </div>
@@ -244,45 +244,38 @@ const About: React.FC = () => {
           {isLoadingFarmers ? (
             <div className="py-24 flex flex-col items-center justify-center text-gray-400">
                <Loader2 className="w-14 h-14 animate-spin mb-6 text-green-200" />
-               <p className="font-black uppercase tracking-widest text-xs">Accessing Farmers Wall...</p>
+               <p className="font-black uppercase tracking-widest text-xs">Loading wall...</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
                {featuredFarmers.length === 0 ? (
                  <div className="col-span-full py-24 text-center text-gray-400 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-100">
                     <UserIcon className="w-20 h-20 mx-auto mb-6 opacity-5" />
-                    <p className="text-xl font-medium">Be the first to share your journey!</p>
+                    <p className="text-xl font-medium">No stories yet. Start the movement!</p>
                  </div>
                ) : (
                  featuredFarmers.map((farmer) => {
                    const isOwner = user && String(user.id) === String(farmer.userId);
-                   const canManage = isAdmin || isOwner;
                    const isCurrentEditing = editingId === farmer.userId;
                    
                    return (
                      <div key={farmer.userId} className="group bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden relative transition-all duration-500 hover:shadow-2xl hover:-translate-y-2">
-                        {canManage && (
+                        {(user?.role === 'admin' || isOwner) && (
                           <div className="absolute top-4 right-4 flex space-x-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
-                             <button 
-                               onClick={() => isCurrentEditing ? setEditingId(null) : startEditing(farmer)} 
-                               className={`p-3 rounded-2xl text-white shadow-xl ${isCurrentEditing ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}
-                             >
+                             <button onClick={() => isCurrentEditing ? setEditingId(null) : startEditing(farmer)} className="p-3 bg-blue-600 text-white rounded-2xl shadow-xl">
                                 {isCurrentEditing ? <X size={16} /> : <Pencil size={16} />}
                              </button>
-                             <button 
-                               onClick={() => handleDeleteProfile(farmer.userId)} 
-                               className="p-3 bg-red-600 text-white rounded-2xl hover:bg-red-700 shadow-xl"
-                             >
+                             <button onClick={() => handleDeleteProfile(farmer.userId)} className="p-3 bg-red-600 text-white rounded-2xl shadow-xl">
                                 <Trash2 size={16} />
                              </button>
                           </div>
                         )}
                         
                         <div className="aspect-[4/5] bg-gray-100 overflow-hidden relative">
-                          <img src={farmer.photo} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={farmer.name} />
+                          <img src={farmer.photo} className="w-full h-full object-cover transition-transform duration-1000 group-hover:scale-110" alt={farmer.name} />
                           <div className="absolute bottom-6 left-6">
                             <div className="bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full flex items-center text-[10px] font-black text-green-700 shadow-xl border border-white">
-                               <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> AGRIFAIR VERIFIED
+                               <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> VERIFIED FARMER
                             </div>
                           </div>
                         </div>
@@ -293,24 +286,22 @@ const About: React.FC = () => {
                            {isCurrentEditing ? (
                              <div className="space-y-4">
                                <textarea 
-                                 className="w-full p-4 border-2 border-blue-50 rounded-2xl text-sm h-32 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none resize-none transition-all" 
+                                 className="w-full p-4 border-2 border-blue-50 rounded-2xl text-sm h-32 outline-none" 
                                  value={editBio} 
                                  onChange={(e) => setEditBio(e.target.value)} 
                                />
-                               <Button fullWidth onClick={() => saveEdit(farmer)} disabled={isActionPending} className="h-12 text-sm rounded-xl">
-                                 {isActionPending ? <Loader2 className="animate-spin w-5 h-5" /> : 'Update Story'}
+                               <Button fullWidth onClick={() => saveEdit(farmer)} disabled={isActionPending} className="h-10 text-xs">
+                                 {isActionPending ? <Loader2 className="animate-spin" /> : 'Save Changes'}
                                </Button>
                              </div>
                            ) : (
-                             <p className="text-gray-600 italic text-base line-clamp-5 leading-relaxed">"{farmer.bio}"</p>
+                             <p className="text-gray-600 italic text-base line-clamp-5">"{farmer.bio}"</p>
                            )}
                            
-                           {!isCurrentEditing && (
-                             <div className="pt-6 mt-6 border-t border-gray-50 flex items-center justify-between">
-                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Joined {farmer.date}</span>
-                                <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
-                             </div>
-                           )}
+                           <div className="pt-6 mt-6 border-t border-gray-50 flex items-center justify-between">
+                              <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">{farmer.date}</span>
+                              <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-lg shadow-green-200"></div>
+                           </div>
                         </div>
                      </div>
                    );
@@ -320,30 +311,22 @@ const About: React.FC = () => {
           )}
        </section>
 
-       {/* Voices from the Field (Interviews) */}
        <section className="bg-green-900 rounded-[3rem] p-10 md:p-20 border border-green-800 mb-20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/10 rounded-full blur-[100px]"></div>
           <div className="max-w-4xl mx-auto relative z-10">
              <Quote className="w-16 h-16 text-yellow-500 opacity-30 mb-8 mx-auto" />
              <h2 className="text-4xl font-black text-white mb-12 text-center tracking-tight">{t('about_interview_title')}</h2>
              <div className="space-y-10">
-                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
-                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Struggle</p>
-                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q1')}</p>
-                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a1')} "</p>
-                </div>
-                
-                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
-                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Solution</p>
-                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q2')}</p>
-                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a2')} "</p>
-                </div>
-                
-                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
-                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Future</p>
-                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q3')}</p>
-                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a3')} "</p>
-                </div>
+                {[
+                  { q: t('about_q1'), a: t('about_a1'), tag: 'Challenge' },
+                  { q: t('about_q2'), a: t('about_a2'), tag: 'Solution' },
+                  { q: t('about_q3'), a: t('about_a3'), tag: 'Message' }
+                ].map((item, idx) => (
+                  <div key={idx} className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10">
+                    <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-widest">{item.tag}</p>
+                    <p className="font-bold text-white mb-5 text-xl">Q: {item.q}</p>
+                    <p className="text-green-50 italic text-xl font-light leading-relaxed">" {item.a} "</p>
+                  </div>
+                ))}
              </div>
           </div>
        </section>

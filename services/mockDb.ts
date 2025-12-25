@@ -2,21 +2,6 @@
 import { User, Complaint, FeaturedFarmer } from '../types';
 import { supabase } from './supabaseClient';
 
-/**
- * --- REPAIR INSTRUCTIONS ---
- * If you see 'user_id column not found', go to Supabase SQL Editor and run:
- * 
- * DROP TABLE IF EXISTS featured_farmers;
- * CREATE TABLE featured_farmers (
- *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
- *   name TEXT NOT NULL,
- *   bio TEXT NOT NULL,
- *   photo TEXT NOT NULL,
- *   date TEXT NOT NULL
- * );
- */
-
 const getLocal = <T>(key: string): T[] => {
   try {
     const data = localStorage.getItem(key);
@@ -58,9 +43,7 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
         .eq('mobile', mobile)
         .maybeSingle();
       if (!error && data) return mapDbToUser(data);
-    } catch (e) {
-      console.error("[AgriFair] Cloud lookup error:", e);
-    }
+    } catch (e) {}
   }
   const local = getLocal<User>('agrifair_users').find(u => u.mobile === mobile);
   return local ? { ...local, id: String(local.id) } : undefined;
@@ -79,11 +62,7 @@ const createUser = async (user: Partial<User>): Promise<User> => {
         .select()
         .single();
       
-      if (!error && data) {
-        return mapDbToUser(data);
-      } 
-      
-      // Handle existing user gracefully
+      if (!error && data) return mapDbToUser(data);
       if (error && (error.code === '23505' || error.message?.includes('unique'))) {
         const existing = await findUserByMobile(user.mobile!);
         if (existing) return existing;
@@ -191,32 +170,28 @@ const getAllFeaturedFarmers = async (): Promise<FeaturedFarmer[]> => {
 const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string): Promise<string | null> => {
   let sUserId = String(farmer.userId);
   let finalCloudId: string | null = null;
+  let syncSuccess = false;
   
   if (supabase) {
-    console.log("[AgriFair] Starting Cloud Sync for Spotlight...");
     try {
-      // 1. Resolve true Cloud Identity
+      // 1. Resolve Identity
       if (isUuid(sUserId)) {
         const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
         if (data) finalCloudId = data.id;
       }
-
-      // 2. Recovery: Lookup by mobile if ID is local or missing in cloud
       if (!finalCloudId && userMobile) {
         const { data } = await supabase.from('users').select('id').eq('mobile', userMobile).maybeSingle();
         if (data) finalCloudId = data.id;
       }
-
-      // 3. Last resort auto-repair
       if (!finalCloudId && userMobile) {
         const repairedUser = await createUser({ username: farmer.name, mobile: userMobile });
         if (isUuid(repairedUser.id)) finalCloudId = repairedUser.id;
       }
 
-      // 4. Perform Upsert with verified cloud ID
+      // 2. Perform Upsert
       if (finalCloudId) {
         const payload = {
-          user_id: finalCloudId, // Must match DB column name exactly
+          user_id: finalCloudId,
           name: farmer.name,
           bio: farmer.bio,
           photo: farmer.photo,
@@ -228,30 +203,27 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
           .upsert(payload, { onConflict: 'user_id' });
         
         if (error) {
-          console.error("[AgriFair] DB Schema Error Detail:", error);
-          if (error.message.includes('user_id')) {
-            throw new Error("Schema Mismatch: Please ensure your 'featured_farmers' table has a 'user_id' column (UUID type). See logs for SQL fix.");
-          }
-          throw error;
+          console.warn("[AgriFair] Cloud Sync Error (Schema mismatch?):", error.message);
+        } else {
+          syncSuccess = true;
         }
-      } else {
-        throw new Error("Identity Sync Failed: Could not link your local account to a Cloud UUID. Please logout and login again.");
       }
-    } catch (e: any) {
-      console.error("[AgriFair] Upsert Error:", e);
-      throw e;
+    } catch (e) {
+      console.warn("[AgriFair] Cloud operation failed, falling back to local storage.", e);
     }
   }
   
-  // Update local for UI state
+  // 3. Update Local Storage (Always do this as fallback)
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId || (finalCloudId && String(f.userId) === finalCloudId));
   const localFarmer = { ...farmer, userId: finalCloudId || sUserId };
+  
   if (index > -1) farmers[index] = localFarmer;
   else farmers.push(localFarmer);
+  
   setLocal('agrifair_featured', farmers);
 
-  return finalCloudId;
+  return syncSuccess ? (finalCloudId || sUserId) : null;
 };
 
 const deleteFeaturedFarmer = async (userId: string): Promise<void> => {

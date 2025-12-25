@@ -50,8 +50,8 @@ const About: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          // Optimized size for Supabase storage and display
-          const MAX_DIM = 500; 
+          // Optimized dimensions for reliable cloud storage
+          const MAX_DIM = 450; 
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -64,9 +64,9 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            // Lower quality slightly to ensure fast uploads
-            resolve(canvas.toDataURL('image/jpeg', 0.6)); 
-          } else { reject(new Error("Canvas context failed")); }
+            // Lower quality slightly to ensure fast uploads even on 3G/4G
+            resolve(canvas.toDataURL('image/jpeg', 0.5)); 
+          } else { reject(new Error("Image processing error")); }
         };
         img.onerror = (error) => reject(error);
       };
@@ -82,7 +82,7 @@ const About: React.FC = () => {
         setPhoto(compressedBase64);
         setErrorMsg(null);
       } catch (err) {
-        setErrorMsg("Could not process image. Try a smaller file.");
+        setErrorMsg("Could not process image. Please try a different photo.");
       }
     }
   };
@@ -92,12 +92,12 @@ const About: React.FC = () => {
     setErrorMsg(null);
 
     if (!user || !user.id) {
-      setErrorMsg("Session error. Please logout and login again.");
+      setErrorMsg("Please login again to verify your account.");
       return;
     }
 
     if (!photo || !bio) {
-      setErrorMsg("Please provide both a photo and a short bio.");
+      setErrorMsg("A photo and a short bio are required.");
       return;
     }
 
@@ -111,16 +111,16 @@ const About: React.FC = () => {
     };
 
     try {
-      // Pass mobile number as a backup to help the service sync the correct cloud ID
+      // Proactive sync logic is now handled in the service
       await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
       await fetchFarmers();
       setBio(''); 
       setPhoto(null); 
       setIsUploading(false);
-      alert("Success! Your story is now live in the Spotlight.");
+      alert("Success! Your journey is now shared with the community.");
     } catch (err: any) {
       console.error("Upload error:", err);
-      setErrorMsg(err.message || "Failed to share story. Your session might be out of sync.");
+      setErrorMsg(err.message || "Something went wrong. Please check your signal and try again.");
     } finally {
       setIsActionPending(false);
     }
@@ -128,14 +128,14 @@ const About: React.FC = () => {
 
   const handleDeleteProfile = async (targetUserId: string) => {
     const isSelf = String(user?.id) === String(targetUserId);
-    if (!confirm(isSelf ? "Remove your profile from the spotlight?" : "ADMIN: Delete this story?")) return;
+    if (!confirm(isSelf ? "Remove your profile?" : "Admin: Delete this entry?")) return;
     
     setIsActionPending(true);
     try {
       await DatabaseService.deleteFeaturedFarmer(targetUserId);
       await fetchFarmers();
     } catch (err) {
-      alert("Failed to delete.");
+      alert("Deletion failed.");
     } finally {
       setIsActionPending(false);
     }
@@ -176,12 +176,12 @@ const About: React.FC = () => {
           <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 relative z-10">
              <div className="max-w-xl">
                 <h2 className="text-4xl font-black text-green-900 mb-4 tracking-tight">Community Spotlight</h2>
-                <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join the wall of fame.</p>
+                <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join our wall of success.</p>
              </div>
              {user && !myProfile && (
                <Button onClick={() => { setIsUploading(!isUploading); setErrorMsg(null); }} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
                  <Camera className="w-5 h-5 mr-2" /> 
-                 {isUploading ? 'Cancel' : 'Share My Journey'}
+                 {isUploading ? 'Cancel' : 'Share My Story'}
                </Button>
              )}
           </div>
@@ -214,7 +214,7 @@ const About: React.FC = () => {
                      ) : (
                        <div className="text-center p-6">
                          <Camera className="w-14 h-14 text-green-200 mx-auto mb-4 group-hover:scale-110 group-hover:text-green-400 transition-all" />
-                         <span className="text-xs text-green-600 font-black uppercase tracking-widest">Select Portrait</span>
+                         <span className="text-xs text-green-600 font-black uppercase tracking-widest">Add Portrait</span>
                        </div>
                      )}
                    </div>
@@ -223,10 +223,10 @@ const About: React.FC = () => {
                  
                  <div className="md:col-span-2 flex flex-col justify-between">
                    <div>
-                     <label className="block text-xs font-black text-green-800 mb-3 uppercase tracking-widest opacity-60">Write your experience (Max 300 chars)</label>
+                     <label className="block text-xs font-black text-green-800 mb-3 uppercase tracking-widest opacity-60">Your Experience (Max 300 chars)</label>
                      <textarea 
                        className="w-full p-6 border-2 border-green-100 rounded-3xl h-44 text-lg focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none resize-none transition-all" 
-                       placeholder="How has AgriFair changed your farming business?" 
+                       placeholder="Tell us how AgriFair helped your farm..." 
                        value={bio} 
                        onChange={(e) => setBio(e.target.value)} 
                        required 
@@ -247,14 +247,14 @@ const About: React.FC = () => {
           {isLoadingFarmers ? (
             <div className="py-24 flex flex-col items-center justify-center text-gray-400">
                <Loader2 className="w-14 h-14 animate-spin mb-6 text-green-200" />
-               <p className="font-black uppercase tracking-widest text-xs">Accessing Community Archive...</p>
+               <p className="font-black uppercase tracking-widest text-xs">Accessing Farmers Wall...</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
                {featuredFarmers.length === 0 ? (
                  <div className="col-span-full py-24 text-center text-gray-400 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-100">
                     <UserIcon className="w-20 h-20 mx-auto mb-6 opacity-5" />
-                    <p className="text-xl font-medium">Be the first to share your journey on our wall.</p>
+                    <p className="text-xl font-medium">Be the first to share your journey!</p>
                  </div>
                ) : (
                  featuredFarmers.map((farmer) => {
@@ -310,7 +310,7 @@ const About: React.FC = () => {
                            
                            {!isCurrentEditing && (
                              <div className="pt-6 mt-6 border-t border-gray-50 flex items-center justify-between">
-                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Recorded {farmer.date}</span>
+                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Joined {farmer.date}</span>
                                 <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
                              </div>
                            )}

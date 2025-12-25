@@ -80,16 +80,6 @@ const mapDbToUser = (data: any): User => ({
   role: data.role
 });
 
-const testConnection = async () => {
-  if (!supabase) return false;
-  try {
-    const { error } = await supabase.from('users').select('count', { count: 'exact', head: true });
-    return !error;
-  } catch (e) {
-    return false;
-  }
-};
-
 const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
   if (supabase) {
     try {
@@ -124,12 +114,12 @@ const createUser = async (user: Partial<User>): Promise<User> => {
       
       if (!error && data) {
         return mapDbToUser(data);
-      } else if (error) {
+      } else {
         const existing = await findUserByMobile(user.mobile!);
         if (existing) return existing;
       }
     } catch (e) {
-      console.error("Supabase connection error during signup:", e);
+      console.error("Supabase creation error:", e);
     }
   } 
 
@@ -239,19 +229,30 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
     try {
       let finalCloudId: string | null = null;
 
-      // 1. Validate if current ID is a UUID
+      // 1. Try to find the user in Supabase by their currently assigned ID
       if (isUuid(sUserId)) {
         const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
-      // 2. If not found, look up by mobile (Primary fix for newly registered users)
+      // 2. Fallback: Search by mobile (Critical for newly registered users)
       if (!finalCloudId && userMobile) {
         const { data } = await supabase.from('users').select('id').eq('mobile', userMobile).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
-      // 3. Perform Upsert only if we have a valid cloud UUID
+      // 3. Auto-Sync: If user doesn't exist in cloud at all, create them now to allow the link
+      if (!finalCloudId && userMobile) {
+        const { data: newUser, error: regError } = await supabase
+          .from('users')
+          .insert([{ username: farmer.name, mobile: userMobile, role: 'user' }])
+          .select('id')
+          .single();
+        
+        if (!regError && newUser) finalCloudId = newUser.id;
+      }
+
+      // 4. Final attempt to upsert the spotlight entry
       if (finalCloudId) {
         const payload = {
           user_id: finalCloudId,
@@ -263,7 +264,7 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
         const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
         if (error) throw error;
       } else {
-        throw new Error("Unable to link story to a verified cloud account.");
+        throw new Error("Cloud verification failed. Please try logging out and logging back in.");
       }
     } catch (e: any) {
       console.error("Supabase Sync Error:", e);
@@ -271,7 +272,7 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
     }
   }
   
-  // Always update local for redundancy
+  // Local redundancy
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId);
   if (index > -1) farmers[index] = { ...farmer, userId: sUserId };
@@ -292,7 +293,6 @@ const deleteFeaturedFarmer = async (userId: string): Promise<void> => {
 };
 
 export const DatabaseService = {
-  testConnection,
   findUserByMobile,
   createUser,
   setUserOtp,

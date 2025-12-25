@@ -25,8 +25,10 @@ const About: React.FC = () => {
   const fetchFarmers = async () => {
     setIsLoadingFarmers(true);
     try {
-      const data = await DatabaseService.getAllFeaturedFarmers();
-      setFeaturedFarmers(data);
+      if (typeof DatabaseService.getAllFeaturedFarmers === 'function') {
+        const data = await DatabaseService.getAllFeaturedFarmers();
+        setFeaturedFarmers(data);
+      }
     } catch (err) {
       console.error("Failed to fetch farmers:", err);
     } finally {
@@ -83,18 +85,17 @@ const About: React.FC = () => {
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Ensure we have a valid user ID (stringified for consistency)
     const currentUserId = user?.id ? String(user.id) : null;
     
     if (!currentUserId || !photo || !bio) {
-      alert("Please ensure you are logged in and have provided a photo and bio.");
+      alert("Missing data. Please check login status, photo and bio.");
       return;
     }
 
     setIsActionPending(true);
     const newFarmer: FeaturedFarmer = {
       userId: currentUserId,
-      name: user?.username || 'Farmer',
+      name: user?.username || 'Verified Farmer',
       bio,
       photo,
       date: new Date().toLocaleDateString()
@@ -108,7 +109,7 @@ const About: React.FC = () => {
       setIsUploading(false);
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Failed to save profile. Please check your connection.");
+      alert("Verification failed. Please try again in a moment.");
     } finally {
       setIsActionPending(false);
     }
@@ -116,7 +117,7 @@ const About: React.FC = () => {
 
   const handleDeleteProfile = async (targetUserId: string) => {
     const isSelf = String(user?.id) === String(targetUserId);
-    if (!confirm(isSelf ? "Remove your profile from the community spotlight?" : "ADMIN: Delete this user's spotlight?")) return;
+    if (!confirm(isSelf ? "Remove your profile?" : "ADMIN: Delete this user's spotlight?")) return;
     
     setIsActionPending(true);
     try {
@@ -174,7 +175,7 @@ const About: React.FC = () => {
              )}
           </div>
 
-          {/* Upload Form (only for users without a profile) */}
+          {/* Upload Form */}
           {isUploading && user && !myProfile && (
             <div className="bg-green-50 rounded-2xl p-8 mb-16 border border-green-100 animate-slide-up shadow-inner">
                <div className="flex items-center mb-6">
@@ -201,10 +202,10 @@ const About: React.FC = () => {
                  </div>
                  
                  <div className="md:col-span-2 flex flex-col">
-                   <label className="block text-xs font-black text-green-800 mb-2 uppercase tracking-widest opacity-60">Short Bio / Experience</label>
+                   <label className="block text-xs font-black text-green-800 mb-2 uppercase tracking-widest opacity-60">Your Experience</label>
                    <textarea 
                      className="w-full flex-grow p-6 border border-green-200 rounded-2xl h-44 text-lg focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none resize-none transition-all" 
-                     placeholder="e.g. 'I am a wheat farmer from Punjab and AgriFair helped me negotiate 20% better rates...'" 
+                     placeholder="Tell other farmers how AgriFair helped you..." 
                      value={bio} 
                      onChange={(e) => setBio(e.target.value)} 
                      required 
@@ -224,14 +225,14 @@ const About: React.FC = () => {
           {isLoadingFarmers ? (
             <div className="py-20 flex flex-col items-center justify-center text-gray-400">
                <Loader2 className="w-12 h-12 animate-spin mb-4 text-green-200" />
-               <p className="font-bold uppercase tracking-widest text-xs">Accessing Community Data...</p>
+               <p className="font-bold uppercase tracking-widest text-xs">Syncing Stories...</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
                {featuredFarmers.length === 0 ? (
                  <div className="col-span-full py-20 text-center text-gray-400 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
                     <UserIcon className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                    <p className="text-lg">No stories shared yet. Be the first to join the spotlight!</p>
+                    <p className="text-lg">No stories shared yet.</p>
                  </div>
                ) : (
                  featuredFarmers.map((farmer) => {

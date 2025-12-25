@@ -83,23 +83,21 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     try {
-      // Generate ID client-side to ensure it is immediately available in session
-      const generatedId = Math.random().toString(36).substring(2, 15);
-      const userData: User = { 
-        id: generatedId, 
+      const newUserRequest: Partial<User> = { 
         username, 
         mobile, 
         role: mobile === ADMIN_MOBILE ? 'admin' : 'user' 
       };
       
-      await DatabaseService.createUser(userData);
+      // Crucial: Wait for the database to return the created user (with its assigned ID)
+      const createdUser = await DatabaseService.createUser(newUserRequest);
       
-      // Use the local object immediately instead of re-fetching to avoid DB replication delay
-      setUser(userData);
-      localStorage.setItem('agrifair_session', JSON.stringify(userData));
+      setUser(createdUser);
+      localStorage.setItem('agrifair_session', JSON.stringify(createdUser));
       setActiveOtp(null);
       return { success: true };
     } catch (err: any) {
+      console.error("Signup Error:", err);
       return { success: false, message: err.message || "Registration failed." };
     }
   };

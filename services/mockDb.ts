@@ -15,37 +15,16 @@ const getLocal = <T>(key: string): T[] => {
 const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// --- Advanced Mapping (Handles Schema Variations) ---
-const mapUserToDb = (u: Partial<User>) => {
-  const payload: any = {
-    username: u.username,
-    mobile: u.mobile,
-  };
-  // Ensure ID is passed as string to DB
-  if (u.id) payload.id = String(u.id);
-  if (u.role) payload.role = u.role;
-  return payload;
-};
-
-const mapComplaintToDb = (c: Partial<Complaint>) => ({
-  user_id: String(c.userId),
-  trader_name: c.traderName,
-  issue: c.issue,
-  date: c.date,
-  status: c.status || 'Pending'
+// --- Mapper Helpers ---
+const mapDbToUser = (data: any): User => ({
+  id: String(data.id),
+  username: data.username,
+  mobile: data.mobile,
+  role: data.role
 });
 
-const mapDbToComplaint = (item: any): Complaint => ({
-  id: String(item.id),
-  userId: String(item.user_id || item.userId),
-  traderName: item.trader_name || item.traderName,
-  issue: item.issue,
-  date: item.date,
-  status: item.status
-});
-
+// --- Service Definition ---
 export const DatabaseService = {
-  // --- Connection Check ---
   testConnection: async () => {
     if (!supabase) return false;
     try {
@@ -56,7 +35,6 @@ export const DatabaseService = {
     }
   },
 
-  // --- User Operations ---
   findUserByMobile: async (mobile: string): Promise<User | undefined> => {
     if (supabase) {
       try {
@@ -65,33 +43,54 @@ export const DatabaseService = {
           .select('*')
           .eq('mobile', mobile)
           .maybeSingle();
-        
-        if (!error && data) {
-          return { ...data, id: String(data.id) } as User;
-        }
+        if (!error && data) return mapDbToUser(data);
       } catch (e) {}
     }
     const local = getLocal<User>('agrifair_users').find(u => u.mobile === mobile);
     return local ? { ...local, id: String(local.id) } : undefined;
   },
 
-  createUser: async (user: Partial<User>): Promise<void> => {
-    // Crucial: Use the provided ID or generate one immediately
-    const finalId = String(user.id || generateId());
-    const userData = { ...user, id: finalId };
+  createUser: async (user: Partial<User>): Promise<User> => {
+    let finalUser: User = { 
+      id: user.id || generateId(), 
+      username: user.username || '', 
+      mobile: user.mobile || '', 
+      role: user.role || 'user' 
+    };
 
     if (supabase) {
       try {
-        const payload = mapUserToDb(userData);
-        await supabase.from('users').insert([payload]);
-      } catch (e) {}
+        const payload = {
+          username: user.username,
+          mobile: user.mobile,
+          role: user.role || 'user'
+        };
+        
+        const { data, error } = await supabase
+          .from('users')
+          .insert([payload])
+          .select()
+          .single();
+        
+        if (!error && data) {
+          finalUser = mapDbToUser(data);
+        } else if (error) {
+          console.error("Supabase error during user creation:", error);
+          // If insert fails (e.g. mobile exists), try to fetch the existing one
+          const existing = await DatabaseService.findUserByMobile(user.mobile!);
+          if (existing) finalUser = existing;
+        }
+      } catch (e) {
+        console.error("Failed to connect to Supabase for creation:", e);
+      }
     } 
 
     const users = getLocal<User>('agrifair_users');
-    if (!users.find(u => u.mobile === user.mobile)) {
-      users.push(userData as User);
+    if (!users.find(u => u.mobile === finalUser.mobile)) {
+      users.push(finalUser);
       setLocal('agrifair_users', users);
     }
+    return finalUser;
   },
 
   setUserOtp: async (mobile: string, otp: string): Promise<void> => {
@@ -116,27 +115,38 @@ export const DatabaseService = {
     return false;
   },
 
-  // --- Complaint Operations ---
   getComplaintsByUserId: async (userId: string): Promise<Complaint[]> => {
-    const sUserId = String(userId);
+    const sId = String(userId);
     if (supabase) {
       try {
         const { data, error } = await supabase
           .from('complaints')
           .select('*')
-          .or(`user_id.eq.${sUserId},userId.eq.${sUserId}`)
+          .or(`user_id.eq.${sId},userId.eq.${sId}`)
           .order('date', { ascending: false });
-        if (!error && data) return data.map(mapDbToComplaint);
+        if (!error && data) return data.map((item: any) => ({
+          id: String(item.id),
+          userId: String(item.user_id || item.userId),
+          traderName: item.trader_name || item.traderName,
+          issue: item.issue,
+          date: item.date,
+          status: item.status
+        }));
       } catch (e) {}
     }
-    return getLocal<Complaint>('agrifair_complaints')
-      .filter(c => String(c.userId) === sUserId);
+    return getLocal<Complaint>('agrifair_complaints').filter(c => String(c.userId) === sId);
   },
 
   createComplaint: async (complaint: Partial<Complaint>): Promise<void> => {
     if (supabase) {
       try {
-        const payload = mapComplaintToDb(complaint);
+        const payload = {
+          user_id: String(complaint.userId),
+          trader_name: complaint.traderName,
+          issue: complaint.issue,
+          date: complaint.date,
+          status: complaint.status || 'Pending'
+        };
         await supabase.from('complaints').insert([payload]);
       } catch (e) {}
     }
@@ -145,7 +155,6 @@ export const DatabaseService = {
     setLocal('agrifair_complaints', complaints);
   },
 
-  // --- Featured Farmer Operations ---
   getAllFeaturedFarmers: async (): Promise<FeaturedFarmer[]> => {
     if (supabase) {
       try {
@@ -155,7 +164,7 @@ export const DatabaseService = {
           .order('date', { ascending: false });
 
         if (!error && data) {
-          return data.map(item => ({
+          return data.map((item: any) => ({
             id: String(item.id),
             userId: String(item.user_id || item.userId),
             name: item.name,
@@ -164,28 +173,47 @@ export const DatabaseService = {
             date: item.date
           }));
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("Error fetching featured farmers from cloud:", e);
+      }
     }
     return getLocal<FeaturedFarmer>('agrifair_featured').map(f => ({ ...f, userId: String(f.userId) }));
   },
 
   upsertFeaturedFarmer: async (farmer: FeaturedFarmer): Promise<void> => {
     const sUserId = String(farmer.userId);
+    
     if (supabase) {
       try {
-        const payload = {
-          user_id: sUserId,
-          name: farmer.name,
-          bio: farmer.bio,
-          photo: farmer.photo,
-          date: farmer.date
-        };
-        const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
-        if (error) {
-          const fallback = { userId: sUserId, name: farmer.name, bio: farmer.bio, photo: farmer.photo, date: farmer.date };
-          await supabase.from('featured_farmers').upsert(fallback, { onConflict: 'userId' });
+        // Ensure user exists in DB first to satisfy foreign keys
+        const { data: userRecord } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
+        
+        if (userRecord) {
+          const payload = {
+            user_id: sUserId,
+            name: farmer.name,
+            bio: farmer.bio,
+            photo: farmer.photo,
+            date: farmer.date
+          };
+          
+          const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
+          if (error) {
+             // Fallback for different column naming
+             await supabase.from('featured_farmers').upsert({
+               userId: sUserId,
+               name: farmer.name,
+               bio: farmer.bio,
+               photo: farmer.photo,
+               date: farmer.date
+             }, { onConflict: 'userId' });
+          }
+        } else {
+          console.warn("User ID not found in Supabase. Falling back to local spotlight.");
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error("Supabase Spotlight Error:", e);
+      }
     }
     
     const farmers = getLocal<FeaturedFarmer>('agrifair_featured');

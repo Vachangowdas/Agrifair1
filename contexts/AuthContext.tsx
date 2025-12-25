@@ -83,7 +83,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     try {
-      // Pre-generate ID to ensure local/cloud consistency immediately
+      // Generate ID client-side to ensure it is immediately available in session
       const generatedId = Math.random().toString(36).substring(2, 15);
       const userData: User = { 
         id: generatedId, 
@@ -94,14 +94,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
       
       await DatabaseService.createUser(userData);
       
-      // Use the local user object immediately to avoid sync race conditions
+      // Use the local object immediately instead of re-fetching to avoid DB replication delay
       setUser(userData);
       localStorage.setItem('agrifair_session', JSON.stringify(userData));
       setActiveOtp(null);
       return { success: true };
-      
     } catch (err: any) {
-      return { success: false, message: err.message || "Registration failed. Check database configuration." };
+      return { success: false, message: err.message || "Registration failed." };
     }
   };
 

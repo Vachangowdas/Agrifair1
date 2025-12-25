@@ -83,20 +83,26 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     }
 
     try {
-      const userData: Partial<User> = { username, mobile, role: mobile === ADMIN_MOBILE ? 'admin' : 'user' };
+      // Pre-generate ID to ensure local/cloud consistency immediately
+      const generatedId = Math.random().toString(36).substring(2, 15);
+      const userData: User = { 
+        id: generatedId, 
+        username, 
+        mobile, 
+        role: mobile === ADMIN_MOBILE ? 'admin' : 'user' 
+      };
+      
       await DatabaseService.createUser(userData);
       
-      const createdUser = await DatabaseService.findUserByMobile(mobile);
-      if (createdUser) {
-        setUser(createdUser);
-        localStorage.setItem('agrifair_session', JSON.stringify(createdUser));
-        setActiveOtp(null);
-        return { success: true };
-      }
+      // Use the local user object immediately to avoid sync race conditions
+      setUser(userData);
+      localStorage.setItem('agrifair_session', JSON.stringify(userData));
+      setActiveOtp(null);
+      return { success: true };
+      
     } catch (err: any) {
       return { success: false, message: err.message || "Registration failed. Check database configuration." };
     }
-    return { success: false, message: "Registration failed." };
   };
 
   const logout = () => {

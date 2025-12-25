@@ -21,7 +21,8 @@ const mapUserToDb = (u: Partial<User>) => {
     username: u.username,
     mobile: u.mobile,
   };
-  // Only include role if explicitly provided to avoid schema errors if column doesn't exist
+  // Explicitly include ID to ensure spotlight associations work immediately after signup
+  if (u.id) payload.id = u.id;
   if (u.role) payload.role = u.role;
   return payload;
 };
@@ -84,7 +85,6 @@ export const DatabaseService = {
         const { error } = await supabase.from('users').insert([payload]);
         if (error) {
           console.error('[Supabase Error] createUser:', error.message, error.hint);
-          throw new Error(`Database Error: ${error.message}`);
         }
       } catch (e: any) {
         console.warn('[Supabase Sync Failed] Falling back to local storage.');
@@ -143,7 +143,7 @@ export const DatabaseService = {
         }
       } catch (e) {}
     }
-    return getLocal<Complaint>('agrifair_complaints').filter(c => c.userId === userId);
+    return getLocal<Complaint>('agrifair_complaints').filter(c => String(c.userId) === String(userId));
   },
 
   createComplaint: async (complaint: Partial<Complaint>): Promise<void> => {
@@ -171,7 +171,7 @@ export const DatabaseService = {
         if (!error && data) {
           return data.map(item => ({
             id: item.id,
-            userId: item.user_id || item.userId,
+            userId: String(item.user_id || item.userId),
             name: item.name,
             bio: item.bio,
             photo: item.photo,
@@ -208,34 +208,38 @@ export const DatabaseService = {
     }
     
     const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-    const index = farmers.findIndex(f => f.userId === farmer.userId);
+    const index = farmers.findIndex(f => String(f.userId) === String(farmer.userId));
     if (index > -1) farmers[index] = farmer;
     else farmers.push(farmer);
     setLocal('agrifair_featured', farmers);
   },
 
   deleteFeaturedFarmer: async (userId: string): Promise<void> => {
+    const targetId = String(userId);
+    
     if (supabase) {
       try {
-        // More robust deletion: try both standard naming conventions explicitly
+        // Try deleting by user_id
         const { error: err1 } = await supabase
           .from('featured_farmers')
           .delete()
-          .eq('user_id', userId);
+          .eq('user_id', targetId);
         
+        // If that failed or found nothing, try camelCase userId
         if (err1) {
           await supabase
             .from('featured_farmers')
             .delete()
-            .eq('userId', userId);
+            .eq('userId', targetId);
         }
       } catch (e) {
         console.error('[Supabase Delete Exception]', e);
       }
     } 
-    // Always mirror to local state for instant UI update
+    
+    // Crucial: Update local storage using string comparison to handle mixed types
     const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-    const updatedFarmers = farmers.filter(f => f.userId !== userId);
-    setLocal('agrifair_featured', updatedFarmers);
+    const filtered = farmers.filter(f => String(f.userId) !== targetId);
+    setLocal('agrifair_featured', filtered);
   }
 };

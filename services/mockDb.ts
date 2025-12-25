@@ -2,7 +2,48 @@
 import { User, Complaint, FeaturedFarmer } from '../types';
 import { supabase } from './supabaseClient';
 
-// --- Local Storage Fallbacks ---
+/**
+ * --- SUPABASE SQL SCHEMA ---
+ * Run the following in your Supabase SQL Editor:
+ * 
+ * -- 1. Users Table
+ * CREATE TABLE IF NOT EXISTS users (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   username TEXT NOT NULL,
+ *   mobile TEXT UNIQUE NOT NULL,
+ *   role TEXT DEFAULT 'user',
+ *   otp_code TEXT,
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 2. Featured Farmers (Community Spotlight) Table
+ * CREATE TABLE IF NOT EXISTS featured_farmers (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
+ *   name TEXT NOT NULL,
+ *   bio TEXT NOT NULL,
+ *   photo TEXT NOT NULL, -- Stores Base64 image data
+ *   date TEXT NOT NULL,
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- 3. Complaints Table
+ * CREATE TABLE IF NOT EXISTS complaints (
+ *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+ *   user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+ *   trader_name TEXT NOT NULL,
+ *   issue TEXT NOT NULL,
+ *   date TEXT NOT NULL,
+ *   status TEXT DEFAULT 'Pending',
+ *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+ * );
+ * 
+ * -- Optional: RLS (Row Level Security)
+ * -- ALTER TABLE featured_farmers ENABLE ROW LEVEL SECURITY;
+ * -- CREATE POLICY "Public Access" ON featured_farmers FOR SELECT USING (true);
+ * ----------------------------
+ */
+
 const getLocal = <T>(key: string): T[] => {
   try {
     const data = localStorage.getItem(key);
@@ -15,15 +56,12 @@ const getLocal = <T>(key: string): T[] => {
 const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// --- Mapper Helpers ---
 const mapDbToUser = (data: any): User => ({
   id: String(data.id),
   username: data.username,
   mobile: data.mobile,
   role: data.role
 });
-
-// --- Individual Function Exports (Fixed naming for stability) ---
 
 const testConnection = async () => {
   if (!supabase) return false;
@@ -53,13 +91,6 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
 };
 
 const createUser = async (user: Partial<User>): Promise<User> => {
-  let finalUser: User = { 
-    id: user.id || generateId(), 
-    username: user.username || '', 
-    mobile: user.mobile || '', 
-    role: user.role || 'user' 
-  };
-
   if (supabase) {
     try {
       const payload = {
@@ -75,22 +106,28 @@ const createUser = async (user: Partial<User>): Promise<User> => {
         .single();
       
       if (!error && data) {
-        finalUser = mapDbToUser(data);
+        return mapDbToUser(data);
       } else if (error) {
-        console.warn("Supabase creation failed, checking if user exists:", error);
+        // Handle case where user might already exist
         const existing = await findUserByMobile(user.mobile!);
-        if (existing) finalUser = existing;
+        if (existing) return existing;
+        console.error("Supabase user creation failed:", error);
       }
     } catch (e) {
-      console.error("Supabase creation exception:", e);
+      console.error("Supabase connection error during signup:", e);
     }
   } 
 
+  // Fallback to local
+  const finalUser: User = { 
+    id: generateId(), 
+    username: user.username || '', 
+    mobile: user.mobile || '', 
+    role: user.role || 'user' 
+  };
   const users = getLocal<User>('agrifair_users');
-  if (!users.find(u => u.mobile === finalUser.mobile)) {
-    users.push(finalUser);
-    setLocal('agrifair_users', users);
-  }
+  users.push(finalUser);
+  setLocal('agrifair_users', users);
   return finalUser;
 };
 
@@ -123,12 +160,12 @@ const getComplaintsByUserId = async (userId: string): Promise<Complaint[]> => {
       const { data, error } = await supabase
         .from('complaints')
         .select('*')
-        .or(`user_id.eq.${sId},userId.eq.${sId}`)
+        .eq('user_id', sId)
         .order('date', { ascending: false });
       if (!error && data) return data.map((item: any) => ({
         id: String(item.id),
-        userId: String(item.user_id || item.userId),
-        traderName: item.trader_name || item.traderName,
+        userId: String(item.user_id),
+        traderName: item.trader_name,
         issue: item.issue,
         date: item.date,
         status: item.status
@@ -142,7 +179,7 @@ const createComplaint = async (complaint: Partial<Complaint>): Promise<void> => 
   if (supabase) {
     try {
       const payload = {
-        user_id: String(complaint.userId),
+        user_id: complaint.userId,
         trader_name: complaint.traderName,
         issue: complaint.issue,
         date: complaint.date,
@@ -162,19 +199,17 @@ const getAllFeaturedFarmers = async (): Promise<FeaturedFarmer[]> => {
       const { data, error } = await supabase
         .from('featured_farmers')
         .select('*')
-        .order('date', { ascending: false });
+        .order('created_at', { ascending: false });
 
       if (!error && data) {
         return data.map((item: any) => ({
           id: String(item.id),
-          userId: String(item.user_id || item.userId),
+          userId: String(item.user_id),
           name: item.name,
           bio: item.bio,
           photo: item.photo,
           date: item.date
         }));
-      } else if (error) {
-        console.error("Supabase fetch farmers error:", error);
       }
     } catch (e) {
       console.error("Cloud fetch exception:", e);
@@ -188,28 +223,20 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer): Promise<void> => {
   
   if (supabase) {
     try {
-      const { data: userRecord } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
+      const payload = {
+        user_id: sUserId,
+        name: farmer.name,
+        bio: farmer.bio,
+        photo: farmer.photo,
+        date: farmer.date
+      };
       
-      if (userRecord) {
-        const payload = {
-          user_id: sUserId,
-          name: farmer.name,
-          bio: farmer.bio,
-          photo: farmer.photo,
-          date: farmer.date
-        };
+      const { error } = await supabase
+        .from('featured_farmers')
+        .upsert(payload, { onConflict: 'user_id' });
         
-        const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
-        if (error) {
-           console.error("Upsert failed, trying alternative column names:", error);
-           await supabase.from('featured_farmers').upsert({
-             userId: sUserId,
-             name: farmer.name,
-             bio: farmer.bio,
-             photo: farmer.photo,
-             date: farmer.date
-           }, { onConflict: 'userId' });
-        }
+      if (error) {
+        console.error("Supabase upsert failed:", error);
       }
     } catch (e) {
       console.error("Supabase Spotlight Error:", e);
@@ -228,7 +255,6 @@ const deleteFeaturedFarmer = async (userId: string): Promise<void> => {
   if (supabase) {
     try {
       await supabase.from('featured_farmers').delete().eq('user_id', targetId);
-      await supabase.from('featured_farmers').delete().eq('userId', targetId);
     } catch (e) {}
   } 
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
@@ -236,7 +262,6 @@ const deleteFeaturedFarmer = async (userId: string): Promise<void> => {
   setLocal('agrifair_featured', filtered);
 };
 
-// --- Service Object Export ---
 export const DatabaseService = {
   testConnection,
   findUserByMobile,

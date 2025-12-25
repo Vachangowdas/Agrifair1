@@ -25,12 +25,9 @@ const About: React.FC = () => {
   const fetchFarmers = async () => {
     setIsLoadingFarmers(true);
     try {
-      // Defensive check for method existence
       if (DatabaseService && typeof DatabaseService.getAllFeaturedFarmers === 'function') {
         const data = await DatabaseService.getAllFeaturedFarmers();
-        setFeaturedFarmers(data);
-      } else {
-        console.error("DatabaseService.getAllFeaturedFarmers is not available yet.");
+        setFeaturedFarmers(data || []);
       }
     } catch (err) {
       console.error("Failed to fetch farmers:", err);
@@ -52,7 +49,7 @@ const About: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_DIM = 400; 
+          const MAX_DIM = 600; 
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -65,7 +62,7 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.5)); 
+            resolve(canvas.toDataURL('image/jpeg', 0.7)); 
           } else { reject(new Error("Canvas context failed")); }
         };
         img.onerror = (error) => reject(error);
@@ -88,17 +85,15 @@ const About: React.FC = () => {
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    const currentUserId = user?.id ? String(user.id) : null;
-    
-    if (!currentUserId || !photo || !bio) {
-      alert("Missing data. Please check login status, photo and bio.");
+    if (!user?.id || !photo || !bio) {
+      alert("Please ensure you are logged in, and have selected a photo and written a bio.");
       return;
     }
 
     setIsActionPending(true);
     const newFarmer: FeaturedFarmer = {
-      userId: currentUserId,
-      name: user?.username || 'Verified Farmer',
+      userId: user.id,
+      name: user.username || 'Verified Farmer',
       bio,
       photo,
       date: new Date().toLocaleDateString()
@@ -112,7 +107,7 @@ const About: React.FC = () => {
       setIsUploading(false);
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Verification failed. Please ensure you are logged in correctly.");
+      alert("Failed to share story. Please check your connection.");
     } finally {
       setIsActionPending(false);
     }
@@ -120,7 +115,7 @@ const About: React.FC = () => {
 
   const handleDeleteProfile = async (targetUserId: string) => {
     const isSelf = String(user?.id) === String(targetUserId);
-    if (!confirm(isSelf ? "Remove your profile?" : "ADMIN: Delete this user's spotlight?")) return;
+    if (!confirm(isSelf ? "Remove your profile from the spotlight?" : "ADMIN: Delete this story?")) return;
     
     setIsActionPending(true);
     try {
@@ -155,7 +150,7 @@ const About: React.FC = () => {
   const myProfile = user ? featuredFarmers.find(f => String(f.userId) === String(user.id)) : null;
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8">
+    <div className="max-w-7xl mx-auto px-4 py-12">
        {/* Page Heading */}
        <div className="text-center mb-16">
           <h1 className="text-4xl md:text-5xl font-extrabold text-green-900 mb-4">{t('about_title')}</h1>
@@ -164,59 +159,63 @@ const About: React.FC = () => {
        </div>
 
        {/* Community Spotlight Section */}
-       <section className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-green-50 mb-20 relative overflow-hidden">
-          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6">
+       <section className="bg-white rounded-[2.5rem] shadow-2xl p-8 md:p-12 border border-green-50 mb-20 relative overflow-hidden">
+          <div className="flex flex-col md:flex-row md:items-end justify-between mb-12 gap-6 relative z-10">
              <div className="max-w-xl">
-                <h2 className="text-4xl font-bold text-green-900 mb-4">Community Spotlight</h2>
-                <p className="text-gray-600 text-lg">Real stories from farmers across the country who use AgriFair to protect their livelihood.</p>
+                <h2 className="text-4xl font-black text-green-900 mb-4 tracking-tight">Community Spotlight</h2>
+                <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join the wall of fame.</p>
              </div>
              {user && !myProfile && (
-               <Button onClick={() => setIsUploading(!isUploading)} className="flex items-center">
-                 <Camera className="w-4 h-4 mr-2" /> 
-                 {isUploading ? 'Cancel' : 'Share My Story'}
+               <Button onClick={() => setIsUploading(!isUploading)} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
+                 <Camera className="w-5 h-5 mr-2" /> 
+                 {isUploading ? 'Cancel' : 'Share My Journey'}
                </Button>
              )}
           </div>
 
           {/* Upload Form */}
           {isUploading && user && !myProfile && (
-            <div className="bg-green-50 rounded-2xl p-8 mb-16 border border-green-100 animate-slide-up shadow-inner">
-               <div className="flex items-center mb-6">
-                 <Upload className="w-6 h-6 text-green-600 mr-3" />
-                 <h3 className="font-bold text-green-900 text-xl">Publish Your Success Story</h3>
+            <div className="bg-green-50 rounded-3xl p-8 mb-16 border border-green-100 animate-slide-up shadow-inner">
+               <div className="flex items-center mb-8">
+                 <div className="bg-green-600 p-3 rounded-2xl mr-4 shadow-lg shadow-green-200">
+                    <Upload className="w-6 h-6 text-white" />
+                 </div>
+                 <h3 className="font-black text-green-900 text-2xl">Your Success Story</h3>
                </div>
                
-               <form onSubmit={handleUploadSubmit} className="grid md:grid-cols-3 gap-8">
+               <form onSubmit={handleUploadSubmit} className="grid md:grid-cols-3 gap-10">
                  <div className="md:col-span-1">
                    <div 
                      onClick={() => fileInputRef.current?.click()} 
-                     className="aspect-square bg-white border-4 border-dashed border-green-200 rounded-2xl flex flex-col items-center justify-center cursor-pointer overflow-hidden relative shadow-sm hover:shadow-md transition-all group"
+                     className="aspect-square bg-white border-4 border-dashed border-green-200 rounded-3xl flex flex-col items-center justify-center cursor-pointer overflow-hidden relative shadow-sm hover:shadow-md transition-all group"
                    >
                      {photo ? (
                        <img src={photo} className="w-full h-full object-cover" alt="Preview" />
                      ) : (
-                       <div className="text-center p-4">
-                         <Camera className="w-12 h-12 text-green-300 mx-auto mb-2 group-hover:scale-110 transition-transform" />
-                         <span className="text-xs text-green-600 font-bold uppercase tracking-wider">Add Photo</span>
+                       <div className="text-center p-6">
+                         <Camera className="w-14 h-14 text-green-200 mx-auto mb-4 group-hover:scale-110 group-hover:text-green-400 transition-all" />
+                         <span className="text-xs text-green-600 font-black uppercase tracking-widest">Select Portrait</span>
                        </div>
                      )}
                    </div>
                    <input type="file" ref={fileInputRef} onChange={handleFileChange} className="hidden" accept="image/*" />
                  </div>
                  
-                 <div className="md:col-span-2 flex flex-col">
-                   <label className="block text-xs font-black text-green-800 mb-2 uppercase tracking-widest opacity-60">Your Experience</label>
-                   <textarea 
-                     className="w-full flex-grow p-6 border border-green-200 rounded-2xl h-44 text-lg focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none resize-none transition-all" 
-                     placeholder="Tell other farmers how AgriFair helped you..." 
-                     value={bio} 
-                     onChange={(e) => setBio(e.target.value)} 
-                     required 
-                     maxLength={300}
-                   />
-                   <div className="mt-6 flex justify-end">
-                     <Button type="submit" disabled={!photo || !bio || isActionPending} className="px-10 h-12">
-                       {isActionPending ? <Loader2 className="animate-spin" /> : 'Publish to Spotlight'}
+                 <div className="md:col-span-2 flex flex-col justify-between">
+                   <div>
+                     <label className="block text-xs font-black text-green-800 mb-3 uppercase tracking-widest opacity-60">Write your experience (Max 300 chars)</label>
+                     <textarea 
+                       className="w-full p-6 border-2 border-green-100 rounded-3xl h-44 text-lg focus:ring-4 focus:ring-green-500/10 focus:border-green-500 outline-none resize-none transition-all" 
+                       placeholder="How has AgriFair changed your farming business?" 
+                       value={bio} 
+                       onChange={(e) => setBio(e.target.value)} 
+                       required 
+                       maxLength={300}
+                     />
+                   </div>
+                   <div className="mt-8 flex justify-end">
+                     <Button type="submit" disabled={!photo || !bio || isActionPending} className="px-12 h-14 text-lg rounded-2xl shadow-xl shadow-green-200">
+                       {isActionPending ? <Loader2 className="animate-spin" /> : 'Publish Story'}
                      </Button>
                    </div>
                  </div>
@@ -226,16 +225,16 @@ const About: React.FC = () => {
 
           {/* Spotlight Feed */}
           {isLoadingFarmers ? (
-            <div className="py-20 flex flex-col items-center justify-center text-gray-400">
-               <Loader2 className="w-12 h-12 animate-spin mb-4 text-green-200" />
-               <p className="font-bold uppercase tracking-widest text-xs">Syncing Stories...</p>
+            <div className="py-24 flex flex-col items-center justify-center text-gray-400">
+               <Loader2 className="w-14 h-14 animate-spin mb-6 text-green-200" />
+               <p className="font-black uppercase tracking-widest text-xs">Accessing Community Archive...</p>
             </div>
           ) : (
-            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
+            <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-10">
                {featuredFarmers.length === 0 ? (
-                 <div className="col-span-full py-20 text-center text-gray-400 bg-gray-50 rounded-3xl border-2 border-dashed border-gray-100">
-                    <UserIcon className="w-16 h-16 mx-auto mb-4 opacity-10" />
-                    <p className="text-lg">No stories shared yet.</p>
+                 <div className="col-span-full py-24 text-center text-gray-400 bg-gray-50 rounded-[2rem] border-2 border-dashed border-gray-100">
+                    <UserIcon className="w-20 h-20 mx-auto mb-6 opacity-5" />
+                    <p className="text-xl font-medium">Be the first to share your journey on our wall.</p>
                  </div>
                ) : (
                  featuredFarmers.map((farmer) => {
@@ -244,56 +243,55 @@ const About: React.FC = () => {
                    const isCurrentEditing = editingId === farmer.userId;
                    
                    return (
-                     <div key={farmer.userId} className="group bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden relative transition-all duration-300 hover:shadow-2xl">
+                     <div key={farmer.userId} className="group bg-white rounded-[2.5rem] shadow-xl border border-gray-100 overflow-hidden relative transition-all duration-500 hover:shadow-2xl hover:-translate-y-2">
                         {canManage && (
-                          <div className="absolute top-2 right-2 flex space-x-1 z-10 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="absolute top-4 right-4 flex space-x-2 z-20 opacity-0 group-hover:opacity-100 transition-opacity">
                              <button 
                                onClick={() => isCurrentEditing ? setEditingId(null) : startEditing(farmer)} 
-                               className={`p-2 rounded-full text-white shadow-lg ${isCurrentEditing ? 'bg-gray-500 hover:bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}
+                               className={`p-3 rounded-2xl text-white shadow-xl ${isCurrentEditing ? 'bg-gray-600' : 'bg-blue-600 hover:bg-blue-700'}`}
                              >
-                                {isCurrentEditing ? <X className="w-3 h-3" /> : <Pencil className="w-3 h-3" />}
+                                {isCurrentEditing ? <X size={16} /> : <Pencil size={16} />}
                              </button>
                              <button 
                                onClick={() => handleDeleteProfile(farmer.userId)} 
-                               className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700 shadow-lg"
+                               className="p-3 bg-red-600 text-white rounded-2xl hover:bg-red-700 shadow-xl"
                              >
-                                <Trash2 className="w-3 h-3" />
+                                <Trash2 size={16} />
                              </button>
                           </div>
                         )}
                         
-                        <div className="aspect-square bg-gray-100 overflow-hidden relative">
-                          <img src={farmer.photo} className="w-full h-full object-cover" alt={farmer.name} />
-                          <div className="absolute bottom-4 left-4">
-                            <div className="bg-white/90 backdrop-blur-sm px-3 py-1 rounded-full flex items-center text-[10px] font-black text-green-700 shadow-sm border border-green-100">
-                               <ShieldCheck className="w-3 h-3 mr-1" /> VERIFIED
+                        <div className="aspect-[4/5] bg-gray-100 overflow-hidden relative">
+                          <img src={farmer.photo} className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" alt={farmer.name} />
+                          <div className="absolute bottom-6 left-6">
+                            <div className="bg-white/90 backdrop-blur-md px-4 py-1.5 rounded-full flex items-center text-[10px] font-black text-green-700 shadow-xl border border-white">
+                               <ShieldCheck className="w-3.5 h-3.5 mr-1.5" /> AGRIFAIR VERIFIED
                             </div>
                           </div>
                         </div>
 
-                        <div className="p-6">
-                           <h3 className="font-bold text-green-900 text-xl mb-2">{farmer.name}</h3>
+                        <div className="p-8">
+                           <h3 className="font-black text-green-950 text-2xl mb-3">{farmer.name}</h3>
                            
                            {isCurrentEditing ? (
-                             <div className="space-y-3">
+                             <div className="space-y-4">
                                <textarea 
-                                 className="w-full p-3 border rounded-xl text-sm h-28 focus:ring-2 focus:ring-blue-500 outline-none resize-none" 
+                                 className="w-full p-4 border-2 border-blue-50 rounded-2xl text-sm h-32 focus:ring-4 focus:ring-blue-500/10 focus:border-blue-500 outline-none resize-none transition-all" 
                                  value={editBio} 
                                  onChange={(e) => setEditBio(e.target.value)} 
                                />
-                               <Button fullWidth onClick={() => saveEdit(farmer)} disabled={isActionPending} className="h-10 text-xs">
-                                 {isActionPending ? <Loader2 className="animate-spin w-4 h-4" /> : <Save className="w-4 h-4 mr-2" />}
-                                 Save Changes
+                               <Button fullWidth onClick={() => saveEdit(farmer)} disabled={isActionPending} className="h-12 text-sm rounded-xl">
+                                 {isActionPending ? <Loader2 className="animate-spin w-5 h-5" /> : 'Update Story'}
                                </Button>
                              </div>
                            ) : (
-                             <p className="text-gray-600 italic text-sm line-clamp-4 leading-relaxed">"{farmer.bio}"</p>
+                             <p className="text-gray-600 italic text-base line-clamp-5 leading-relaxed">"{farmer.bio}"</p>
                            )}
                            
                            {!isCurrentEditing && (
-                             <div className="pt-4 mt-4 border-t border-gray-50 flex items-center justify-between">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Farmer since {farmer.date}</span>
-                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
+                             <div className="pt-6 mt-6 border-t border-gray-50 flex items-center justify-between">
+                                <span className="text-[10px] font-black text-gray-300 uppercase tracking-widest">Recorded {farmer.date}</span>
+                                <div className="w-2.5 h-2.5 rounded-full bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]"></div>
                              </div>
                            )}
                         </div>
@@ -306,27 +304,28 @@ const About: React.FC = () => {
        </section>
 
        {/* Voices from the Field (Interviews) */}
-       <section className="bg-green-50 rounded-3xl p-8 md:p-12 border border-green-100 mb-20">
-          <div className="max-w-4xl mx-auto">
-             <Quote className="w-12 h-12 text-green-200 mb-6 mx-auto" />
-             <h2 className="text-3xl font-bold text-green-900 mb-10 text-center">{t('about_interview_title')}</h2>
-             <div className="space-y-8">
-                <div className="bg-white p-8 rounded-2xl shadow-sm border-l-8 border-green-600 transition-transform hover:-translate-y-1">
-                   <p className="font-black text-green-800 mb-3 text-sm uppercase tracking-widest opacity-60">Question</p>
-                   <p className="font-bold text-gray-900 mb-4 text-lg">Q: {t('about_q1')}</p>
-                   <p className="text-gray-700 italic leading-relaxed text-lg">" {t('about_a1')} "</p>
+       <section className="bg-green-900 rounded-[3rem] p-10 md:p-20 border border-green-800 mb-20 relative overflow-hidden">
+          <div className="absolute top-0 right-0 w-64 h-64 bg-yellow-400/10 rounded-full blur-[100px]"></div>
+          <div className="max-w-4xl mx-auto relative z-10">
+             <Quote className="w-16 h-16 text-yellow-500 opacity-30 mb-8 mx-auto" />
+             <h2 className="text-4xl font-black text-white mb-12 text-center tracking-tight">{t('about_interview_title')}</h2>
+             <div className="space-y-10">
+                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
+                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Struggle</p>
+                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q1')}</p>
+                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a1')} "</p>
                 </div>
                 
-                <div className="bg-white p-8 rounded-2xl shadow-sm border-l-8 border-yellow-500 transition-transform hover:-translate-y-1">
-                   <p className="font-black text-green-800 mb-3 text-sm uppercase tracking-widest opacity-60">Question</p>
-                   <p className="font-bold text-gray-900 mb-4 text-lg">Q: {t('about_q2')}</p>
-                   <p className="text-gray-700 italic leading-relaxed text-lg">" {t('about_a2')} "</p>
+                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
+                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Solution</p>
+                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q2')}</p>
+                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a2')} "</p>
                 </div>
                 
-                <div className="bg-white p-8 rounded-2xl shadow-sm border-l-8 border-green-600 transition-transform hover:-translate-y-1">
-                   <p className="font-black text-green-800 mb-3 text-sm uppercase tracking-widest opacity-60">Question</p>
-                   <p className="font-bold text-gray-900 mb-4 text-lg">Q: {t('about_q3')}</p>
-                   <p className="text-gray-700 italic leading-relaxed text-lg">" {t('about_a3')} "</p>
+                <div className="bg-white/5 backdrop-blur-xl p-10 rounded-[2rem] border border-white/10 transition-all hover:bg-white/10">
+                   <p className="font-black text-yellow-500 mb-4 text-xs uppercase tracking-[0.2em]">Context: The Future</p>
+                   <p className="font-bold text-white mb-5 text-xl">Q: {t('about_q3')}</p>
+                   <p className="text-green-50 italic leading-relaxed text-xl font-light">" {t('about_a3')} "</p>
                 </div>
              </div>
           </div>

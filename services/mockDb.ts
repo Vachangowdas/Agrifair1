@@ -217,10 +217,25 @@ export const DatabaseService = {
   deleteFeaturedFarmer: async (userId: string): Promise<void> => {
     if (supabase) {
       try {
-        await supabase.from('featured_farmers').delete().or(`user_id.eq.${userId},userId.eq.${userId}`);
-      } catch (e) {}
+        // More robust deletion: try both standard naming conventions explicitly
+        const { error: err1 } = await supabase
+          .from('featured_farmers')
+          .delete()
+          .eq('user_id', userId);
+        
+        if (err1) {
+          await supabase
+            .from('featured_farmers')
+            .delete()
+            .eq('userId', userId);
+        }
+      } catch (e) {
+        console.error('[Supabase Delete Exception]', e);
+      }
     } 
+    // Always mirror to local state for instant UI update
     const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-    setLocal('agrifair_featured', farmers.filter(f => f.userId !== userId));
+    const updatedFarmers = farmers.filter(f => f.userId !== userId);
+    setLocal('agrifair_featured', updatedFarmers);
   }
 };

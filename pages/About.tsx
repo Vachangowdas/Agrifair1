@@ -34,6 +34,7 @@ const About: React.FC = () => {
     fetchFarmers();
   }, []);
 
+  // Optimized image compression for Database Storage
   const resizeImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -43,20 +44,20 @@ const About: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 600; 
-          const MAX_HEIGHT = 600;
+          // Smaller max dimension (400px) ensures cross-device sync never fails due to payload size
+          const MAX_DIM = 400; 
           let width = img.width;
           let height = img.height;
 
           if (width > height) {
-            if (width > MAX_WIDTH) {
-              height *= MAX_WIDTH / width;
-              width = MAX_WIDTH;
+            if (width > MAX_DIM) {
+              height *= MAX_DIM / width;
+              width = MAX_DIM;
             }
           } else {
-            if (height > MAX_HEIGHT) {
-              width *= MAX_HEIGHT / height;
-              height = MAX_HEIGHT;
+            if (height > MAX_DIM) {
+              width *= MAX_DIM / height;
+              height = MAX_DIM;
             }
           }
 
@@ -65,7 +66,8 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+            // 0.5 quality provides excellent balance of clarity and extremely low file size (~30kb)
+            resolve(canvas.toDataURL('image/jpeg', 0.5)); 
           } else {
             reject(new Error("Canvas context failed"));
           }
@@ -102,13 +104,17 @@ const About: React.FC = () => {
       date: new Date().toLocaleDateString()
     };
 
-    await DatabaseService.upsertFeaturedFarmer(newFarmer);
-    await fetchFarmers();
-    
-    setBio('');
-    setPhoto(null);
-    setIsUploading(false);
-    setIsActionPending(false);
+    try {
+      await DatabaseService.upsertFeaturedFarmer(newFarmer);
+      await fetchFarmers();
+      setBio('');
+      setPhoto(null);
+      setIsUploading(false);
+    } catch (err) {
+      alert("Failed to save profile to cloud. Check internet connection.");
+    } finally {
+      setIsActionPending(false);
+    }
   };
 
   const handleDeleteProfile = async (targetUserId: string) => {
@@ -133,10 +139,15 @@ const About: React.FC = () => {
   const saveEdit = async (farmer: FeaturedFarmer) => {
     setIsActionPending(true);
     const updated = { ...farmer, bio: editBio };
-    await DatabaseService.upsertFeaturedFarmer(updated);
-    await fetchFarmers();
-    setEditingId(null);
-    setIsActionPending(false);
+    try {
+      await DatabaseService.upsertFeaturedFarmer(updated);
+      await fetchFarmers();
+      setEditingId(null);
+    } catch (err) {
+      alert("Update failed. Please try again.");
+    } finally {
+      setIsActionPending(false);
+    }
   };
 
   const isAdmin = user?.role === 'admin';

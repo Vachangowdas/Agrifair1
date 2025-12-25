@@ -11,11 +11,20 @@ export default defineConfig(({ mode }) => {
   const apiKey = env.VITE_API_KEY || env.API_KEY || "";
   
   // Get the Blob token from environment or fallback to the provided value
-  const blobToken = env.VITE_BLOB_READ_WRITE_TOKEN || env.BLOB_READ_WRITE_TOKEN || "vercel_blob_rw_nLQ75mIE13blhjTO_GmUPbouo43IF265wR6sHJU7LlVqUCg";
+  const blobToken = env.VITE_BLOB_READ_WRITE_TOKEN || env.VITE_BLOB_RW_TOKEN || env.BLOB_READ_WRITE_TOKEN || "";
 
-  // Supabase connection details (Assuming they will be injected by Vercel Integration or .env)
-  const supabaseUrl = env.VITE_SUPABASE_URL || env.SUPABASE_URL || "";
-  const supabaseAnonKey = env.VITE_SUPABASE_ANON_KEY || env.SUPABASE_ANON_KEY || "";
+  // Supabase connection details - Support all common naming variations for Vercel/Supabase
+  const supabaseUrl = 
+    env.VITE_SUPABASE_URL || 
+    env.SUPABASE_URL || 
+    env.NEXT_PUBLIC_SUPABASE_URL || 
+    "";
+
+  const supabaseAnonKey = 
+    env.VITE_SUPABASE_ANON_KEY || 
+    env.SUPABASE_ANON_KEY || 
+    env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 
+    "";
 
   return {
     plugins: [react()],

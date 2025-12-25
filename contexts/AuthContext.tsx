@@ -26,17 +26,35 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
 
   const ADMIN_MOBILE = '2222222222';
 
+  // 1. Initial Load and "Session Healing"
   useEffect(() => {
-    try {
-      const storedUser = localStorage.getItem('agrifair_session');
-      if (storedUser) {
-        const parsedUser = JSON.parse(storedUser);
-        if (parsedUser.mobile === ADMIN_MOBILE) parsedUser.role = 'admin';
-        setUser(parsedUser);
+    const syncSession = async () => {
+      try {
+        const storedUserStr = localStorage.getItem('agrifair_session');
+        if (storedUserStr) {
+          const localUser = JSON.parse(storedUserStr);
+          
+          // Try to find the user in the cloud to get their real UUID
+          const cloudUser = await DatabaseService.findUserByMobile(localUser.mobile);
+          
+          if (cloudUser) {
+            console.log("[AgriFair] Session synced with cloud ID:", cloudUser.id);
+            if (localUser.mobile === ADMIN_MOBILE) cloudUser.role = 'admin';
+            setUser(cloudUser);
+            localStorage.setItem('agrifair_session', JSON.stringify(cloudUser));
+          } else {
+            // Fallback to local if cloud lookup fails
+            if (localUser.mobile === ADMIN_MOBILE) localUser.role = 'admin';
+            setUser(localUser);
+          }
+        }
+      } catch (e) {
+        console.error("Session sync failed:", e);
+        localStorage.removeItem('agrifair_session');
       }
-    } catch (e) {
-      localStorage.removeItem('agrifair_session');
-    }
+    };
+
+    syncSession();
   }, []);
 
   const checkUserExists = async (mobile: string): Promise<boolean> => {
@@ -48,7 +66,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setActiveOtp(code);
     
-    // Pass username to ensure sync during registration
+    // Sync to Supabase immediately so the account exists
     await DatabaseService.setUserOtp(mobile, code, username);
     
     console.log(`[AgriFair OTP] ${mobile}: ${code}`);

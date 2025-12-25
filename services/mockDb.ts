@@ -41,9 +41,14 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
         .select('*')
         .eq('mobile', mobile)
         .maybeSingle();
-      if (error) console.error("[Supabase Error] findUserByMobile:", error.message);
-      if (data) return mapDbToUser(data);
-    } catch (e) { console.error("[Sync Error]", e); }
+      if (error) {
+        console.warn("[AgriFair] Cloud lookup failed:", error.message);
+      } else if (data) {
+        return mapDbToUser(data);
+      }
+    } catch (e) { 
+      console.error("[AgriFair] Unexpected Cloud Error:", e); 
+    }
   }
   return getLocal<User>('agrifair_users').find(u => u.mobile === mobile);
 };
@@ -64,11 +69,9 @@ const createUser = async (user: Partial<User>): Promise<User> => {
         .single();
       
       if (!error && data) {
-        console.log("[AgriFair] User synced to Supabase:", data.id);
         return mapDbToUser(data);
       }
-      if (error) console.error("[Supabase Error] createUser:", error.message);
-    } catch (e) { console.error("[Sync Error]", e); }
+    } catch (e) {}
   } 
 
   const finalUser: User = { 
@@ -88,8 +91,7 @@ const setUserOtp = async (mobile: string, otp: string, username?: string): Promi
     try {
       const payload: any = { mobile, otp_code: otp };
       if (username) payload.username = username;
-      const { error } = await supabase.from('users').upsert(payload, { onConflict: 'mobile' });
-      if (error) console.error("[Supabase Error] setUserOtp:", error.message);
+      await supabase.from('users').upsert(payload, { onConflict: 'mobile' });
     } catch (e) {}
   }
 };
@@ -131,78 +133,113 @@ const getComplaintsByUserId = async (userId: string): Promise<Complaint[]> => {
 };
 
 const createComplaint = async (complaint: Partial<Complaint>): Promise<void> => {
-  let synced = false;
-  if (supabase && isUuid(complaint.userId)) {
+  let finalUserId = complaint.userId;
+
+  if (supabase && !isUuid(finalUserId)) {
+    const localUser = JSON.parse(localStorage.getItem('agrifair_session') || '{}');
+    if (localUser.mobile) {
+      const cloudUser = await findUserByMobile(localUser.mobile);
+      if (cloudUser && isUuid(cloudUser.id)) finalUserId = cloudUser.id;
+    }
+  }
+
+  if (supabase && isUuid(finalUserId)) {
     try {
       const payload = {
-        user_id: complaint.userId,
+        user_id: finalUserId,
         trader_name: complaint.traderName,
         issue: complaint.issue,
         date: complaint.date,
         status: complaint.status || 'Pending'
       };
-      const { error } = await supabase.from('complaints').insert([payload]);
-      if (!error) synced = true;
-      else console.error("[Supabase Error] createComplaint:", error.message);
+      await supabase.from('complaints').insert([payload]);
+      return;
     } catch (e) {}
   }
   
-  if (!synced) {
-    const complaints = getLocal<Complaint>('agrifair_complaints');
-    complaints.push({ ...complaint, id: generateId() } as Complaint);
-    setLocal('agrifair_complaints', complaints);
-  }
+  const complaints = getLocal<Complaint>('agrifair_complaints');
+  complaints.push({ ...complaint, id: generateId(), userId: finalUserId } as Complaint);
+  setLocal('agrifair_complaints', complaints);
 };
 
 const getAllFeaturedFarmers = async (): Promise<FeaturedFarmer[]> => {
   if (supabase) {
     try {
+      // Fetch farmers and join with their photos in a single request
       const { data, error } = await supabase
         .from('featured_farmers')
-        .select('*')
+        .select(`
+          user_id,
+          name,
+          bio,
+          date,
+          farmer_photos (
+            image_data
+          )
+        `)
         .order('created_at', { ascending: false });
 
-      if (!error && data) return data.map(item => ({
-        id: String(item.id),
-        userId: String(item.user_id),
-        name: item.name,
-        bio: item.bio,
-        photo: item.photo,
-        date: item.date
-      }));
-    } catch (e) {}
+      if (!error && data) {
+        return data.map((item: any) => ({
+          userId: item.user_id,
+          name: item.name,
+          bio: item.bio,
+          date: item.date,
+          photo: item.farmer_photos?.[0]?.image_data || '' // Get joined photo
+        }));
+      }
+    } catch (e) {
+      console.error("[AgriFair] Cloud Fetch Error:", e);
+    }
   }
   return getLocal<FeaturedFarmer>('agrifair_featured');
 };
 
 const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string): Promise<string | null> => {
+  let finalUserId = farmer.userId;
+
   if (supabase) {
     try {
-      let finalUserId = farmer.userId;
       if (!isUuid(finalUserId) && userMobile) {
         const user = await findUserByMobile(userMobile);
         if (user && isUuid(user.id)) finalUserId = user.id;
       }
 
       if (isUuid(finalUserId)) {
-        const payload = {
-          user_id: finalUserId,
-          name: farmer.name,
-          bio: farmer.bio,
-          photo: farmer.photo,
-          date: farmer.date
-        };
-        const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
-        if (!error) return finalUserId;
-        console.error("[Supabase Error] upsertFeaturedFarmer:", error.message);
+        // Step 1: Upsert Farmer Metadata
+        const { error: profileError } = await supabase
+          .from('featured_farmers')
+          .upsert({
+            user_id: finalUserId,
+            name: farmer.name,
+            bio: farmer.bio,
+            date: farmer.date
+          }, { onConflict: 'user_id' });
+
+        if (profileError) throw profileError;
+
+        // Step 2: Upsert Photo Data in dedicated table
+        const { error: photoError } = await supabase
+          .from('farmer_photos')
+          .upsert({
+            farmer_id: finalUserId,
+            image_data: farmer.photo
+          }, { onConflict: 'farmer_id' });
+
+        if (photoError) throw photoError;
+
+        console.log("[AgriFair] Farmer profile and photo synced to Cloud.");
+        return finalUserId;
       }
-    } catch (e) {}
+    } catch (e: any) {
+      console.error("[AgriFair] Spotlight Cloud Error:", e.message);
+    }
   }
   
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-  const index = farmers.findIndex(f => f.userId === farmer.userId);
-  if (index > -1) farmers[index] = farmer;
-  else farmers.push(farmer);
+  const index = farmers.findIndex(f => f.userId === farmer.userId || f.userId === finalUserId);
+  if (index > -1) farmers[index] = { ...farmer, userId: finalUserId };
+  else farmers.push({ ...farmer, userId: finalUserId });
   setLocal('agrifair_featured', farmers);
   return null;
 };
@@ -210,6 +247,8 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
 const deleteFeaturedFarmer = async (userId: string): Promise<void> => {
   if (supabase && isUuid(userId)) {
     try {
+      // Cascading delete is handled in SQL via Foreign Key, 
+      // but we explicitly delete from featured_farmers
       await supabase.from('featured_farmers').delete().eq('user_id', userId);
     } catch (e) {}
   } 

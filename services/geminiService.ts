@@ -8,17 +8,8 @@ import { CropInput, PriceResult, SupportedLanguage } from '../types';
  */
 export const calculateFairPrice = async (input: CropInput, language: SupportedLanguage): Promise<PriceResult> => {
   
-  // The API key must be obtained exclusively from the environment variable process.env.API_KEY.
-  const apiKey = process.env.API_KEY;
-
-  if (!apiKey || apiKey === "") {
-    throw new Error(
-      "Missing API Key. Please add 'VITE_API_KEY' to your Vercel Environment Variables or local .env file and redeploy."
-    );
-  }
-
-  // Initialize the AI client
-  const ai = new GoogleGenAI({ apiKey: apiKey });
+  // Always use the named parameter and obtain the API key exclusively from process.env.API_KEY.
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 
   // Calculate total cost for the prompt context
   const totalCost = Number(input.seedCost) + 
@@ -66,8 +57,9 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
   `;
 
   try {
+    // Select gemini-3-pro-preview for tasks involving advanced reasoning, coding, and math.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3-pro-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
@@ -93,17 +85,13 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
       }
     });
 
+    // Directly access the .text property (not a method call) as per the guidelines.
     const text = response.text;
     if (!text) throw new Error("The AI returned an empty response.");
     
-    return JSON.parse(text) as PriceResult;
+    return JSON.parse(text.trim()) as PriceResult;
   } catch (error: any) {
     console.error("Gemini API Error:", error);
-    
-    if (error.message?.includes("API_KEY_INVALID") || error.message?.includes("API key not found")) {
-      throw new Error("The API key provided is invalid. Please check your Google AI Studio dashboard.");
-    }
-    
     throw new Error(error.message || "An error occurred while calculating the fair price.");
   }
 };

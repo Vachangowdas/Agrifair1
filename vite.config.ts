@@ -4,16 +4,16 @@ import react from '@vitejs/plugin-react'
 
 // https://vitejs.dev/config/
 export default defineConfig(({ mode }) => {
-  // Load env file based on `mode` in the current working directory.
-  const env = loadEnv(mode, '.', '');
+  // Load variables from .env files
+  const envFile = loadEnv(mode, (process as any).cwd(), '');
   
-  // Try to get the API key from common variable names
+  // Create a merged environment object prioritizing system/Vercel process.env
+  // over .env files for production reliability.
+  const env = { ...envFile, ...process.env };
+  
+  // Consolidate API Keys with fallback support
   const apiKey = env.VITE_API_KEY || env.API_KEY || "";
   
-  // Get the Blob token from environment or fallback to the provided value
-  const blobToken = env.VITE_BLOB_READ_WRITE_TOKEN || env.VITE_BLOB_RW_TOKEN || env.BLOB_READ_WRITE_TOKEN || "";
-
-  // Supabase connection details - Support all common naming variations for Vercel/Supabase
   const supabaseUrl = 
     env.VITE_SUPABASE_URL || 
     env.SUPABASE_URL || 
@@ -29,10 +29,11 @@ export default defineConfig(({ mode }) => {
   return {
     plugins: [react()],
     define: {
+      // Explicitly stringify variables for Vite to replace them in the source code
       'process.env.API_KEY': JSON.stringify(apiKey),
-      'process.env.BLOB_READ_WRITE_TOKEN': JSON.stringify(blobToken),
       'process.env.SUPABASE_URL': JSON.stringify(supabaseUrl),
       'process.env.SUPABASE_ANON_KEY': JSON.stringify(supabaseAnonKey),
+      'process.env.NODE_ENV': JSON.stringify(mode),
     }
   }
 })

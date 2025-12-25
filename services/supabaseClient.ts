@@ -9,26 +9,23 @@ const isConfigured = Boolean(
   supabaseUrl && 
   supabaseAnonKey && 
   supabaseUrl.startsWith('http') &&
-  supabaseAnonKey.length > 20
+  supabaseAnonKey.length > 10
 );
 
 export const supabase = isConfigured 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
 
-export const getDbStatus = () => ({
-  isCloud: !!supabase,
-  url: supabaseUrl ? `${supabaseUrl.substring(0, 15)}...` : 'Not Configured'
-});
-
 if (!supabase) {
-  console.info(
-    '%c[AgriFair] LOCAL MODE: Supabase variables missing in Vercel/Env.',
-    'color: #eab308; font-weight: bold; background: #fffbeb; padding: 4px; border-radius: 4px;'
+  console.warn(
+    '[AgriFair] Supabase is NOT configured. Ensure SUPABASE_URL and SUPABASE_ANON_KEY are set in Vercel environment variables.'
   );
 } else {
-  console.info(
-    '%c[AgriFair] CLOUD MODE: Supabase Connected.',
-    'color: #16a34a; font-weight: bold; background: #f0fdf4; padding: 4px; border-radius: 4px;'
-  );
+  console.log('[AgriFair] Supabase client initialized successfully.');
 }
+
+export const getDbStatus = () => ({
+  isCloud: !!supabase,
+  hasUrl: !!supabaseUrl,
+  hasKey: !!supabaseAnonKey
+});

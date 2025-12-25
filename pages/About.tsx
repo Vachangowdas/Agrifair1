@@ -25,9 +25,12 @@ const About: React.FC = () => {
   const fetchFarmers = async () => {
     setIsLoadingFarmers(true);
     try {
-      if (typeof DatabaseService.getAllFeaturedFarmers === 'function') {
+      // Defensive check for method existence
+      if (DatabaseService && typeof DatabaseService.getAllFeaturedFarmers === 'function') {
         const data = await DatabaseService.getAllFeaturedFarmers();
         setFeaturedFarmers(data);
+      } else {
+        console.error("DatabaseService.getAllFeaturedFarmers is not available yet.");
       }
     } catch (err) {
       console.error("Failed to fetch farmers:", err);
@@ -109,7 +112,7 @@ const About: React.FC = () => {
       setIsUploading(false);
     } catch (err) {
       console.error("Upload error:", err);
-      alert("Verification failed. Please try again in a moment.");
+      alert("Verification failed. Please ensure you are logged in correctly.");
     } finally {
       setIsActionPending(false);
     }

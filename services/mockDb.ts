@@ -3,16 +3,11 @@ import { User, Complaint, FeaturedFarmer } from '../types';
 import { supabase } from './supabaseClient';
 
 /**
- * IMPORTANT: If you see "user_id column not found", run this in Supabase SQL Editor:
+ * --- REPAIR INSTRUCTIONS ---
+ * If you see 'user_id column not found', go to Supabase SQL Editor and run:
  * 
- * CREATE TABLE IF NOT EXISTS users (
- *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
- *   username TEXT NOT NULL,
- *   mobile TEXT UNIQUE NOT NULL,
- *   role TEXT DEFAULT 'user'
- * );
- * 
- * CREATE TABLE IF NOT EXISTS featured_farmers (
+ * DROP TABLE IF EXISTS featured_farmers;
+ * CREATE TABLE featured_farmers (
  *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  *   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
  *   name TEXT NOT NULL,
@@ -41,7 +36,8 @@ const generateId = () => {
   });
 };
 
-const isUuid = (str: string) => {
+const isUuid = (str: string | undefined): str is string => {
+  if (!str) return false;
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   return uuidRegex.test(str);
 };
@@ -63,7 +59,7 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
         .maybeSingle();
       if (!error && data) return mapDbToUser(data);
     } catch (e) {
-      console.error("Supabase find error:", e);
+      console.error("[AgriFair] Cloud lookup error:", e);
     }
   }
   const local = getLocal<User>('agrifair_users').find(u => u.mobile === mobile);
@@ -87,6 +83,7 @@ const createUser = async (user: Partial<User>): Promise<User> => {
         return mapDbToUser(data);
       } 
       
+      // Handle existing user gracefully
       if (error && (error.code === '23505' || error.message?.includes('unique'))) {
         const existing = await findUserByMobile(user.mobile!);
         if (existing) return existing;
@@ -151,7 +148,7 @@ const getComplaintsByUserId = async (userId: string): Promise<Complaint[]> => {
 };
 
 const createComplaint = async (complaint: Partial<Complaint>): Promise<void> => {
-  if (supabase && isUuid(String(complaint.userId))) {
+  if (supabase && isUuid(complaint.userId)) {
     try {
       const payload = {
         user_id: complaint.userId,
@@ -196,28 +193,30 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
   let finalCloudId: string | null = null;
   
   if (supabase) {
+    console.log("[AgriFair] Starting Cloud Sync for Spotlight...");
     try {
-      // 1. Validate Identity
+      // 1. Resolve true Cloud Identity
       if (isUuid(sUserId)) {
         const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
+      // 2. Recovery: Lookup by mobile if ID is local or missing in cloud
       if (!finalCloudId && userMobile) {
         const { data } = await supabase.from('users').select('id').eq('mobile', userMobile).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
-      // 2. Auto-repair account if missing in cloud
+      // 3. Last resort auto-repair
       if (!finalCloudId && userMobile) {
-        const newUser = await createUser({ username: farmer.name, mobile: userMobile });
-        if (isUuid(newUser.id)) finalCloudId = newUser.id;
+        const repairedUser = await createUser({ username: farmer.name, mobile: userMobile });
+        if (isUuid(repairedUser.id)) finalCloudId = repairedUser.id;
       }
 
-      // 3. Upsert Story
+      // 4. Perform Upsert with verified cloud ID
       if (finalCloudId) {
         const payload = {
-          user_id: finalCloudId, // Code expects snake_case: user_id
+          user_id: finalCloudId, // Must match DB column name exactly
           name: farmer.name,
           bio: farmer.bio,
           photo: farmer.photo,
@@ -229,21 +228,22 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
           .upsert(payload, { onConflict: 'user_id' });
         
         if (error) {
-          if (error.message.includes('user_id') && error.message.includes('schema cache')) {
-            throw new Error("Critical: Your Supabase table is missing the 'user_id' column. Please run the SQL fix from the instructions.");
+          console.error("[AgriFair] DB Schema Error Detail:", error);
+          if (error.message.includes('user_id')) {
+            throw new Error("Schema Mismatch: Please ensure your 'featured_farmers' table has a 'user_id' column (UUID type). See logs for SQL fix.");
           }
           throw error;
         }
       } else {
-        throw new Error("Could not find a matching cloud account. Please log out and log in again.");
+        throw new Error("Identity Sync Failed: Could not link your local account to a Cloud UUID. Please logout and login again.");
       }
     } catch (e: any) {
-      console.error("[AgriFair] Sync Error:", e);
+      console.error("[AgriFair] Upsert Error:", e);
       throw e;
     }
   }
   
-  // Local Backup
+  // Update local for UI state
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId || (finalCloudId && String(f.userId) === finalCloudId));
   const localFarmer = { ...farmer, userId: finalCloudId || sUserId };

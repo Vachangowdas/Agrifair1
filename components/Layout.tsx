@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { SupportedLanguage } from '../types';
-import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Info } from 'lucide-react';
+import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown } from 'lucide-react';
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();

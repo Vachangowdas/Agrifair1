@@ -34,7 +34,6 @@ const About: React.FC = () => {
     fetchFarmers();
   }, []);
 
-  // NEW: Image compression utility to ensure DB sync works
   const resizeImage = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -49,7 +48,6 @@ const About: React.FC = () => {
           let width = img.width;
           let height = img.height;
 
-          // Calculate new dimensions
           if (width > height) {
             if (width > MAX_WIDTH) {
               height *= MAX_WIDTH / width;
@@ -67,7 +65,6 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            // Compress to JPEG with 0.7 quality to keep payload small for DB
             resolve(canvas.toDataURL('image/jpeg', 0.7)); 
           } else {
             reject(new Error("Canvas context failed"));
@@ -156,11 +153,7 @@ const About: React.FC = () => {
 
        {/* Featured Farmers Community Section */}
        <section className="bg-white rounded-3xl shadow-xl p-8 md:p-12 border border-green-50 mb-20 relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-4 flex flex-col items-end space-y-2">
-             <div className="flex items-center space-x-1 text-[10px] font-bold text-blue-500 bg-blue-50 px-2 py-1 rounded border border-blue-100">
-               <div className="w-1.5 h-1.5 bg-blue-500 rounded-full animate-pulse"></div>
-               <span>SUPABASE CONNECTED</span>
-             </div>
+          <div className="absolute top-0 right-0 p-4">
              {isAdmin && (
                <div className="flex items-center space-x-1 text-[10px] font-bold text-red-600 bg-red-50 px-2 py-1 rounded border border-red-100 animate-pulse">
                  <span>MASTER ADMIN AUTHORITY</span>
@@ -234,7 +227,7 @@ const About: React.FC = () => {
           {isLoadingFarmers ? (
             <div className="py-20 flex flex-col items-center justify-center text-gray-400">
                <Loader2 className="w-12 h-12 animate-spin mb-4 text-green-200" />
-               <p className="font-medium">Connecting to Supabase...</p>
+               <p className="font-medium">Loading community stories...</p>
             </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-8">
@@ -251,7 +244,6 @@ const About: React.FC = () => {
 
                    return (
                      <div key={farmer.userId} className="group bg-white rounded-3xl shadow-lg border border-gray-100 overflow-hidden hover:shadow-2xl transition-all duration-300 relative">
-                        {/* Action Bar (Only for Owners or Admins) */}
                         {canManage && (
                           <div className="absolute top-2 right-2 flex space-x-1 opacity-0 group-hover:opacity-100 transition-opacity z-10">
                              {!isCurrentEditing ? (
@@ -333,7 +325,7 @@ const About: React.FC = () => {
           )}
        </section>
 
-       {/* Interview Section - Unchanged... */}
+       {/* Interview Section */}
        <section className="bg-white rounded-3xl shadow-2xl overflow-hidden border border-green-100 mb-20 max-w-5xl mx-auto">
           <div className="bg-green-800 p-8 text-white flex flex-col items-center text-center">
              <Quote className="w-12 h-12 text-yellow-400 mb-4 opacity-50" />

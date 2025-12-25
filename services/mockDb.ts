@@ -38,10 +38,15 @@ import { supabase } from './supabaseClient';
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- Optional: RLS (Row Level Security)
- * -- ALTER TABLE featured_farmers ENABLE ROW LEVEL SECURITY;
- * -- CREATE POLICY "Public Access" ON featured_farmers FOR SELECT USING (true);
- * ----------------------------
+ * -- RLS POLICIES (Required for the app to function)
+ * ALTER TABLE users ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "Public Access" ON users FOR ALL USING (true) WITH CHECK (true);
+ * 
+ * ALTER TABLE featured_farmers ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "Public Access" ON featured_farmers FOR ALL USING (true) WITH CHECK (true);
+ * 
+ * ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
+ * CREATE POLICY "Public Access" ON complaints FOR ALL USING (true) WITH CHECK (true);
  */
 
 const getLocal = <T>(key: string): T[] => {
@@ -54,7 +59,19 @@ const getLocal = <T>(key: string): T[] => {
 };
 
 const setLocal = <T>(key: string, data: T[]) => localStorage.setItem(key, JSON.stringify(data));
-const generateId = () => Math.random().toString(36).substring(2, 15);
+
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) return crypto.randomUUID();
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+    return v.toString(16);
+  });
+};
+
+const isUuid = (str: string) => {
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+  return uuidRegex.test(str);
+};
 
 const mapDbToUser = (data: any): User => ({
   id: String(data.id),
@@ -108,17 +125,14 @@ const createUser = async (user: Partial<User>): Promise<User> => {
       if (!error && data) {
         return mapDbToUser(data);
       } else if (error) {
-        // Handle case where user might already exist
         const existing = await findUserByMobile(user.mobile!);
         if (existing) return existing;
-        console.error("Supabase user creation failed:", error);
       }
     } catch (e) {
       console.error("Supabase connection error during signup:", e);
     }
   } 
 
-  // Fallback to local
   const finalUser: User = { 
     id: generateId(), 
     username: user.username || '', 
@@ -155,7 +169,7 @@ const verifyUserOtp = async (mobile: string, otp: string): Promise<boolean> => {
 
 const getComplaintsByUserId = async (userId: string): Promise<Complaint[]> => {
   const sId = String(userId);
-  if (supabase) {
+  if (supabase && isUuid(sId)) {
     try {
       const { data, error } = await supabase
         .from('complaints')
@@ -176,7 +190,7 @@ const getComplaintsByUserId = async (userId: string): Promise<Complaint[]> => {
 };
 
 const createComplaint = async (complaint: Partial<Complaint>): Promise<void> => {
-  if (supabase) {
+  if (supabase && isUuid(String(complaint.userId))) {
     try {
       const payload = {
         user_id: complaint.userId,
@@ -218,31 +232,46 @@ const getAllFeaturedFarmers = async (): Promise<FeaturedFarmer[]> => {
   return getLocal<FeaturedFarmer>('agrifair_featured').map(f => ({ ...f, userId: String(f.userId) }));
 };
 
-const upsertFeaturedFarmer = async (farmer: FeaturedFarmer): Promise<void> => {
-  const sUserId = String(farmer.userId);
+const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string): Promise<void> => {
+  let sUserId = String(farmer.userId);
   
   if (supabase) {
     try {
-      const payload = {
-        user_id: sUserId,
-        name: farmer.name,
-        bio: farmer.bio,
-        photo: farmer.photo,
-        date: farmer.date
-      };
-      
-      const { error } = await supabase
-        .from('featured_farmers')
-        .upsert(payload, { onConflict: 'user_id' });
-        
-      if (error) {
-        console.error("Supabase upsert failed:", error);
+      let finalCloudId: string | null = null;
+
+      // 1. Validate if current ID is a UUID
+      if (isUuid(sUserId)) {
+        const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
+        if (data) finalCloudId = data.id;
       }
-    } catch (e) {
-      console.error("Supabase Spotlight Error:", e);
+
+      // 2. If not found, look up by mobile (Primary fix for newly registered users)
+      if (!finalCloudId && userMobile) {
+        const { data } = await supabase.from('users').select('id').eq('mobile', userMobile).maybeSingle();
+        if (data) finalCloudId = data.id;
+      }
+
+      // 3. Perform Upsert only if we have a valid cloud UUID
+      if (finalCloudId) {
+        const payload = {
+          user_id: finalCloudId,
+          name: farmer.name,
+          bio: farmer.bio,
+          photo: farmer.photo,
+          date: farmer.date
+        };
+        const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
+        if (error) throw error;
+      } else {
+        throw new Error("Unable to link story to a verified cloud account.");
+      }
+    } catch (e: any) {
+      console.error("Supabase Sync Error:", e);
+      throw e;
     }
   }
   
+  // Always update local for redundancy
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId);
   if (index > -1) farmers[index] = { ...farmer, userId: sUserId };
@@ -252,7 +281,7 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer): Promise<void> => {
 
 const deleteFeaturedFarmer = async (userId: string): Promise<void> => {
   const targetId = String(userId);
-  if (supabase) {
+  if (supabase && isUuid(targetId)) {
     try {
       await supabase.from('featured_farmers').delete().eq('user_id', targetId);
     } catch (e) {}

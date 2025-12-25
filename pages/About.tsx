@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { useAuth } from '../contexts/AuthContext';
 import { FeaturedFarmer } from '../types';
-import { Quote, User as UserIcon, Camera, Upload, Trash2, ShieldCheck, Loader2, Pencil, X, Save } from 'lucide-react';
+import { Quote, User as UserIcon, Camera, Upload, Trash2, ShieldCheck, Loader2, Pencil, X, Save, AlertCircle } from 'lucide-react';
 import { Button } from '../components/Button';
 import { DatabaseService } from '../services/mockDb';
 
@@ -16,6 +16,7 @@ const About: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isLoadingFarmers, setIsLoadingFarmers] = useState(true);
   const [isActionPending, setIsActionPending] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
   
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editBio, setEditBio] = useState('');
@@ -49,7 +50,8 @@ const About: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_DIM = 600; 
+          // Optimized size for Supabase storage and display
+          const MAX_DIM = 500; 
           let width = img.width;
           let height = img.height;
           if (width > height) {
@@ -62,7 +64,8 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            resolve(canvas.toDataURL('image/jpeg', 0.7)); 
+            // Lower quality slightly to ensure fast uploads
+            resolve(canvas.toDataURL('image/jpeg', 0.6)); 
           } else { reject(new Error("Canvas context failed")); }
         };
         img.onerror = (error) => reject(error);
@@ -77,16 +80,24 @@ const About: React.FC = () => {
       try {
         const compressedBase64 = await resizeImage(file);
         setPhoto(compressedBase64);
+        setErrorMsg(null);
       } catch (err) {
-        alert("Could not process image.");
+        setErrorMsg("Could not process image. Try a smaller file.");
       }
     }
   };
 
   const handleUploadSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user?.id || !photo || !bio) {
-      alert("Please ensure you are logged in, and have selected a photo and written a bio.");
+    setErrorMsg(null);
+
+    if (!user || !user.id) {
+      setErrorMsg("Session error. Please logout and login again.");
+      return;
+    }
+
+    if (!photo || !bio) {
+      setErrorMsg("Please provide both a photo and a short bio.");
       return;
     }
 
@@ -100,14 +111,16 @@ const About: React.FC = () => {
     };
 
     try {
-      await DatabaseService.upsertFeaturedFarmer(newFarmer);
+      // Pass mobile number as a backup to help the service sync the correct cloud ID
+      await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
       await fetchFarmers();
       setBio(''); 
       setPhoto(null); 
       setIsUploading(false);
-    } catch (err) {
+      alert("Success! Your story is now live in the Spotlight.");
+    } catch (err: any) {
       console.error("Upload error:", err);
-      alert("Failed to share story. Please check your connection.");
+      setErrorMsg(err.message || "Failed to share story. Your session might be out of sync.");
     } finally {
       setIsActionPending(false);
     }
@@ -136,7 +149,7 @@ const About: React.FC = () => {
   const saveEdit = async (farmer: FeaturedFarmer) => {
     setIsActionPending(true);
     try {
-      await DatabaseService.upsertFeaturedFarmer({ ...farmer, bio: editBio });
+      await DatabaseService.upsertFeaturedFarmer({ ...farmer, bio: editBio }, user?.mobile);
       await fetchFarmers();
       setEditingId(null);
     } catch (err) {
@@ -166,7 +179,7 @@ const About: React.FC = () => {
                 <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join the wall of fame.</p>
              </div>
              {user && !myProfile && (
-               <Button onClick={() => setIsUploading(!isUploading)} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
+               <Button onClick={() => { setIsUploading(!isUploading); setErrorMsg(null); }} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
                  <Camera className="w-5 h-5 mr-2" /> 
                  {isUploading ? 'Cancel' : 'Share My Journey'}
                </Button>
@@ -183,6 +196,13 @@ const About: React.FC = () => {
                  <h3 className="font-black text-green-900 text-2xl">Your Success Story</h3>
                </div>
                
+               {errorMsg && (
+                 <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-xl mb-6 flex items-center text-sm">
+                    <AlertCircle className="w-5 h-5 mr-3 flex-shrink-0" />
+                    <span className="font-bold">{errorMsg}</span>
+                 </div>
+               )}
+
                <form onSubmit={handleUploadSubmit} className="grid md:grid-cols-3 gap-10">
                  <div className="md:col-span-1">
                    <div 

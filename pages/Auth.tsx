@@ -73,7 +73,8 @@ const Auth: React.FC = () => {
     setOtpSentMsg(false);
     setDemoOtpNotification(null);
     
-    const code = await requestOtp(mobile);
+    // SYNC DETAILS EARLY: Pass username if registering
+    const code = await requestOtp(mobile, !isLogin ? username : undefined);
     
     setIsLoading(false);
     setShowOtp(true);

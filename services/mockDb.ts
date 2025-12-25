@@ -52,22 +52,26 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
 const createUser = async (user: Partial<User>): Promise<User> => {
   if (supabase) {
     try {
+      const payload = {
+        username: user.username,
+        mobile: user.mobile,
+        role: user.role || 'user'
+      };
+      
       const { data, error } = await supabase
         .from('users')
-        .insert([{
-          username: user.username,
-          mobile: user.mobile,
-          role: user.role || 'user'
-        }])
+        .upsert(payload, { onConflict: 'mobile' })
         .select()
         .single();
       
       if (!error && data) return mapDbToUser(data);
-      if (error && (error.code === '23505' || error.message?.includes('unique'))) {
-        const existing = await findUserByMobile(user.mobile!);
-        if (existing) return existing;
-      }
-    } catch (e) {}
+      
+      // Fallback: If upsert failed but user exists, just get them
+      const existing = await findUserByMobile(user.mobile!);
+      if (existing) return existing;
+    } catch (e) {
+      console.warn("[AgriFair] Cloud user creation failed:", e);
+    }
   } 
 
   const finalUser: User = { 
@@ -77,16 +81,30 @@ const createUser = async (user: Partial<User>): Promise<User> => {
     role: user.role || 'user' 
   };
   const users = getLocal<User>('agrifair_users');
-  users.push(finalUser);
+  const existingIdx = users.findIndex(u => u.mobile === user.mobile);
+  if (existingIdx > -1) users[existingIdx] = finalUser;
+  else users.push(finalUser);
+  
   setLocal('agrifair_users', users);
   return finalUser;
 };
 
-const setUserOtp = async (mobile: string, otp: string): Promise<void> => {
+/**
+ * Capture user details early during OTP request for better sync
+ */
+const setUserOtp = async (mobile: string, otp: string, username?: string): Promise<void> => {
   if (supabase) {
     try {
-      await supabase.from('users').update({ otp_code: otp }).eq('mobile', mobile);
-    } catch (e) {}
+      const payload: any = { mobile, otp_code: otp };
+      if (username) payload.username = username;
+
+      // Upsert ensures that even if it's a new registration, we capture the data
+      await supabase
+        .from('users')
+        .upsert(payload, { onConflict: 'mobile' });
+    } catch (e) {
+      console.warn("[AgriFair] OTP Sync failed:", e);
+    }
   }
 };
 
@@ -174,7 +192,6 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
   
   if (supabase) {
     try {
-      // 1. Resolve Identity
       if (isUuid(sUserId)) {
         const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
         if (data) finalCloudId = data.id;
@@ -188,7 +205,6 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
         if (isUuid(repairedUser.id)) finalCloudId = repairedUser.id;
       }
 
-      // 2. Perform Upsert
       if (finalCloudId) {
         const payload = {
           user_id: finalCloudId,
@@ -213,7 +229,6 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
     }
   }
   
-  // 3. Update Local Storage (Primary Source of Truth for the UI)
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
   const index = farmers.findIndex(f => String(f.userId) === sUserId || (finalCloudId && String(f.userId) === finalCloudId));
   const localFarmer = { ...farmer, userId: finalCloudId || sUserId };

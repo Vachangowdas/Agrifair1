@@ -14,7 +14,7 @@ interface AuthContextType {
   signup: (username: string, mobile: string, otp: string) => Promise<LoginResult>;
   logout: () => void;
   isAuthenticated: boolean;
-  requestOtp: (mobile: string) => Promise<string>; 
+  requestOtp: (mobile: string, username?: string) => Promise<string>; 
   checkUserExists: (mobile: string) => Promise<boolean>;
 }
 
@@ -44,10 +44,13 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return !!found;
   };
 
-  const requestOtp = async (mobile: string): Promise<string> => {
+  const requestOtp = async (mobile: string, username?: string): Promise<string> => {
     const code = Math.floor(100000 + Math.random() * 900000).toString();
     setActiveOtp(code);
-    await DatabaseService.setUserOtp(mobile, code);
+    
+    // Pass username to ensure sync during registration
+    await DatabaseService.setUserOtp(mobile, code, username);
+    
     console.log(`[AgriFair OTP] ${mobile}: ${code}`);
     return new Promise((resolve) => setTimeout(() => resolve(code), 1000));
   };
@@ -89,7 +92,6 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
         role: mobile === ADMIN_MOBILE ? 'admin' : 'user' 
       };
       
-      // Crucial: Wait for the database to return the created user (with its assigned ID)
       const createdUser = await DatabaseService.createUser(newUserRequest);
       
       setUser(createdUser);

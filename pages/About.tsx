@@ -50,7 +50,6 @@ const About: React.FC = () => {
         img.src = event.target?.result as string;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          // Optimized dimensions for reliable cloud storage
           const MAX_DIM = 450; 
           let width = img.width;
           let height = img.height;
@@ -64,9 +63,8 @@ const About: React.FC = () => {
           const ctx = canvas.getContext('2d');
           if (ctx) {
             ctx.drawImage(img, 0, 0, width, height);
-            // Lower quality slightly to ensure fast uploads even on 3G/4G
             resolve(canvas.toDataURL('image/jpeg', 0.5)); 
-          } else { reject(new Error("Image processing error")); }
+          } else { reject(new Error("Processing error")); }
         };
         img.onerror = (error) => reject(error);
       };
@@ -82,7 +80,7 @@ const About: React.FC = () => {
         setPhoto(compressedBase64);
         setErrorMsg(null);
       } catch (err) {
-        setErrorMsg("Could not process image. Please try a different photo.");
+        setErrorMsg("Image too large or invalid.");
       }
     }
   };
@@ -91,51 +89,53 @@ const About: React.FC = () => {
     e.preventDefault();
     setErrorMsg(null);
 
-    if (!user || !user.id) {
-      setErrorMsg("Please login again to verify your account.");
+    if (!user || !user.id || !user.mobile) {
+      setErrorMsg("Session error. Please logout and login again.");
       return;
     }
 
     if (!photo || !bio) {
-      setErrorMsg("A photo and a short bio are required.");
+      setErrorMsg("Photo and Bio are required.");
       return;
     }
 
     setIsActionPending(true);
     const newFarmer: FeaturedFarmer = {
       userId: user.id,
-      name: user.username || 'Verified Farmer',
+      name: user.username || 'Farmer',
       bio,
       photo,
       date: new Date().toLocaleDateString()
     };
 
     try {
-      // Proactive sync logic is now handled in the service
-      await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
+      const confirmedCloudId = await DatabaseService.upsertFeaturedFarmer(newFarmer, user.mobile);
+      
+      // If we got a Cloud ID back and it's different from local, patch the session
+      if (confirmedCloudId && confirmedCloudId !== user.id) {
+        const updatedUser = { ...user, id: confirmedCloudId };
+        localStorage.setItem('agrifair_session', JSON.stringify(updatedUser));
+        // Note: Full reload or state lifting would be ideal, but for now this fixes the persistence
+      }
+
       await fetchFarmers();
-      setBio(''); 
-      setPhoto(null); 
-      setIsUploading(false);
-      alert("Success! Your journey is now shared with the community.");
+      setBio(''); setPhoto(null); setIsUploading(false);
+      alert("Success! Your story is live.");
     } catch (err: any) {
-      console.error("Upload error:", err);
-      setErrorMsg(err.message || "Something went wrong. Please check your signal and try again.");
+      setErrorMsg(err.message || "Upload failed. Try again.");
     } finally {
       setIsActionPending(false);
     }
   };
 
   const handleDeleteProfile = async (targetUserId: string) => {
-    const isSelf = String(user?.id) === String(targetUserId);
-    if (!confirm(isSelf ? "Remove your profile?" : "Admin: Delete this entry?")) return;
-    
+    if (!confirm("Remove this entry?")) return;
     setIsActionPending(true);
     try {
       await DatabaseService.deleteFeaturedFarmer(targetUserId);
       await fetchFarmers();
     } catch (err) {
-      alert("Deletion failed.");
+      alert("Delete failed.");
     } finally {
       setIsActionPending(false);
     }
@@ -160,7 +160,6 @@ const About: React.FC = () => {
   };
 
   const isAdmin = user?.role === 'admin';
-  const myProfile = user ? featuredFarmers.find(f => String(f.userId) === String(user.id)) : null;
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-12">
@@ -178,7 +177,7 @@ const About: React.FC = () => {
                 <h2 className="text-4xl font-black text-green-900 mb-4 tracking-tight">Community Spotlight</h2>
                 <p className="text-gray-600 text-lg">Real stories from the heroes who feed the nation. Join our wall of success.</p>
              </div>
-             {user && !myProfile && (
+             {user && (
                <Button onClick={() => { setIsUploading(!isUploading); setErrorMsg(null); }} className="flex items-center h-14 px-8 rounded-2xl shadow-xl shadow-green-100">
                  <Camera className="w-5 h-5 mr-2" /> 
                  {isUploading ? 'Cancel' : 'Share My Story'}
@@ -186,8 +185,7 @@ const About: React.FC = () => {
              )}
           </div>
 
-          {/* Upload Form */}
-          {isUploading && user && !myProfile && (
+          {isUploading && user && (
             <div className="bg-green-50 rounded-3xl p-8 mb-16 border border-green-100 animate-slide-up shadow-inner">
                <div className="flex items-center mb-8">
                  <div className="bg-green-600 p-3 rounded-2xl mr-4 shadow-lg shadow-green-200">
@@ -243,7 +241,6 @@ const About: React.FC = () => {
             </div>
           )}
 
-          {/* Spotlight Feed */}
           {isLoadingFarmers ? (
             <div className="py-24 flex flex-col items-center justify-center text-gray-400">
                <Loader2 className="w-14 h-14 animate-spin mb-6 text-green-200" />

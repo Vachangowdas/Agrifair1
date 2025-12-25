@@ -3,8 +3,7 @@ import { User, Complaint, FeaturedFarmer } from '../types';
 import { supabase } from './supabaseClient';
 
 /**
- * --- SUPABASE SQL SCHEMA ---
- * Run the following in your Supabase SQL Editor:
+ * --- SUPABASE SQL SCHEMA (RUN THIS IN YOUR SQL EDITOR) ---
  * 
  * -- 1. Users Table
  * CREATE TABLE IF NOT EXISTS users (
@@ -16,13 +15,13 @@ import { supabase } from './supabaseClient';
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
  * 
- * -- 2. Featured Farmers (Community Spotlight) Table
+ * -- 2. Featured Farmers (Spotlight) Table
  * CREATE TABLE IF NOT EXISTS featured_farmers (
  *   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
  *   user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE UNIQUE,
  *   name TEXT NOT NULL,
  *   bio TEXT NOT NULL,
- *   photo TEXT NOT NULL, -- Stores Base64 image data
+ *   photo TEXT NOT NULL,
  *   date TEXT NOT NULL,
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
@@ -37,16 +36,6 @@ import { supabase } from './supabaseClient';
  *   status TEXT DEFAULT 'Pending',
  *   created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
  * );
- * 
- * -- RLS POLICIES (Required for the app to function)
- * ALTER TABLE users ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "Public Access" ON users FOR ALL USING (true) WITH CHECK (true);
- * 
- * ALTER TABLE featured_farmers ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "Public Access" ON featured_farmers FOR ALL USING (true) WITH CHECK (true);
- * 
- * ALTER TABLE complaints ENABLE ROW LEVEL SECURITY;
- * CREATE POLICY "Public Access" ON complaints FOR ALL USING (true) WITH CHECK (true);
  */
 
 const getLocal = <T>(key: string): T[] => {
@@ -100,29 +89,38 @@ const findUserByMobile = async (mobile: string): Promise<User | undefined> => {
 const createUser = async (user: Partial<User>): Promise<User> => {
   if (supabase) {
     try {
-      const payload = {
-        username: user.username,
-        mobile: user.mobile,
-        role: user.role || 'user'
-      };
-      
+      // Direct Insert Attempt
       const { data, error } = await supabase
         .from('users')
-        .insert([payload])
+        .insert([{
+          username: user.username,
+          mobile: user.mobile,
+          role: user.role || 'user'
+        }])
         .select()
         .single();
       
       if (!error && data) {
+        console.log("[AgriFair] User synced to cloud successfully.");
         return mapDbToUser(data);
-      } else {
+      } 
+      
+      // If error is unique constraint, fetch existing instead of failing
+      if (error && (error.code === '23505' || error.message?.includes('unique'))) {
         const existing = await findUserByMobile(user.mobile!);
-        if (existing) return existing;
+        if (existing) {
+          console.log("[AgriFair] Found existing cloud user during sync.");
+          return existing;
+        }
       }
+      
+      console.warn("[AgriFair] Cloud registration issue:", error?.message);
     } catch (e) {
-      console.error("Supabase creation error:", e);
+      console.error("[AgriFair] Exception during cloud registration:", e);
     }
   } 
 
+  // Local Fallback (only used if Cloud is genuinely unreachable or not configured)
   const finalUser: User = { 
     id: generateId(), 
     username: user.username || '', 
@@ -222,37 +220,32 @@ const getAllFeaturedFarmers = async (): Promise<FeaturedFarmer[]> => {
   return getLocal<FeaturedFarmer>('agrifair_featured').map(f => ({ ...f, userId: String(f.userId) }));
 };
 
-const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string): Promise<void> => {
+const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string): Promise<string | null> => {
   let sUserId = String(farmer.userId);
+  let finalCloudId: string | null = null;
   
   if (supabase) {
     try {
-      let finalCloudId: string | null = null;
-
-      // 1. Try to find the user in Supabase by their currently assigned ID
+      // Phase 1: Identity Resolution
+      // 1. Check if provided ID is already a cloud UUID
       if (isUuid(sUserId)) {
         const { data } = await supabase.from('users').select('id').eq('id', sUserId).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
-      // 2. Fallback: Search by mobile (Critical for newly registered users)
+      // 2. Lookup by mobile if ID lookup failed (Powerful "Healer" step)
       if (!finalCloudId && userMobile) {
         const { data } = await supabase.from('users').select('id').eq('mobile', userMobile).maybeSingle();
         if (data) finalCloudId = data.id;
       }
 
-      // 3. Auto-Sync: If user doesn't exist in cloud at all, create them now to allow the link
+      // 3. Last Ditch: Register user on the fly if they don't exist
       if (!finalCloudId && userMobile) {
-        const { data: newUser, error: regError } = await supabase
-          .from('users')
-          .insert([{ username: farmer.name, mobile: userMobile, role: 'user' }])
-          .select('id')
-          .single();
-        
-        if (!regError && newUser) finalCloudId = newUser.id;
+        const newUser = await createUser({ username: farmer.name, mobile: userMobile });
+        if (isUuid(newUser.id)) finalCloudId = newUser.id;
       }
 
-      // 4. Final attempt to upsert the spotlight entry
+      // Phase 2: Upsert Story
       if (finalCloudId) {
         const payload = {
           user_id: finalCloudId,
@@ -264,20 +257,23 @@ const upsertFeaturedFarmer = async (farmer: FeaturedFarmer, userMobile?: string)
         const { error } = await supabase.from('featured_farmers').upsert(payload, { onConflict: 'user_id' });
         if (error) throw error;
       } else {
-        throw new Error("Cloud verification failed. Please try logging out and logging back in.");
+        throw new Error("Unable to link story to a verified cloud account. Please try logging out and logging in again.");
       }
     } catch (e: any) {
-      console.error("Supabase Sync Error:", e);
+      console.error("Upsert Failure:", e);
       throw e;
     }
   }
   
-  // Local redundancy
+  // Update local for persistence
   const farmers = getLocal<FeaturedFarmer>('agrifair_featured');
-  const index = farmers.findIndex(f => String(f.userId) === sUserId);
-  if (index > -1) farmers[index] = { ...farmer, userId: sUserId };
-  else farmers.push({ ...farmer, userId: sUserId });
+  const index = farmers.findIndex(f => String(f.userId) === sUserId || (finalCloudId && String(f.userId) === finalCloudId));
+  const localFarmer = { ...farmer, userId: finalCloudId || sUserId };
+  if (index > -1) farmers[index] = localFarmer;
+  else farmers.push(localFarmer);
   setLocal('agrifair_featured', farmers);
+
+  return finalCloudId;
 };
 
 const deleteFeaturedFarmer = async (userId: string): Promise<void> => {

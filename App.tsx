@@ -1,6 +1,7 @@
 
 import React from 'react';
-import { HashRouter, Routes, Route, Navigate } from 'react-router-dom';
+// Fix for 'no exported member' errors: Using namespace import for react-router-dom
+import * as ReactRouterDOM from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LanguageProvider } from './contexts/LanguageContext';
 import { Layout } from './components/Layout';
@@ -9,6 +10,8 @@ import Auth from './pages/Auth';
 import CalculatorPage from './pages/Calculator';
 import ComplaintsPage from './pages/Complaints';
 import About from './pages/About';
+
+const { HashRouter, Routes, Route, Navigate } = ReactRouterDOM as any;
 
 // Protected Route Wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactElement }> = ({ children }) => {

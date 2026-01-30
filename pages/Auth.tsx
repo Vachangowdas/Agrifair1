@@ -1,12 +1,15 @@
 
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
+// Fix for 'no exported member' errors: Using namespace import for react-router-dom
+import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
 import { CheckCircle, Smartphone, X, MessageSquare, AlertCircle, Loader2, ArrowRight } from 'lucide-react';
 import { DatabaseService } from '../services/mockDb';
+
+const { useNavigate } = ReactRouterDOM as any;
 
 const Auth: React.FC = () => {
   const [isLogin, setIsLogin] = useState(true);

@@ -1,11 +1,14 @@
 
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+// Fix for 'no exported member' errors: Using namespace import for react-router-dom
+import * as ReactRouterDOM from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useLanguage } from '../contexts/LanguageContext';
 import { SupportedLanguage } from '../types';
 import { Sprout, Scale, MessageSquare, LogOut, Menu, X, User as UserIcon, Languages, ChevronDown, Cloud, WifiOff, AlertCircle } from 'lucide-react';
 import { supabase, getDbStatus } from '../services/supabaseClient';
+
+const { Link, useLocation, useNavigate } = ReactRouterDOM as any;
 
 export const Layout: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, logout } = useAuth();

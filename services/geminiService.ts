@@ -1,17 +1,19 @@
-
 import { GoogleGenAI, Type } from "@google/genai";
 import { CropInput, PriceResult, SupportedLanguage } from '../types';
 
 /**
  * Service to interact with Google Gemini AI for fair price calculations.
- * The API key is injected via vite.config.ts from environment variables.
  */
 export const calculateFairPrice = async (input: CropInput, language: SupportedLanguage): Promise<PriceResult> => {
-  
-  // Always use the named parameter and obtain the API key exclusively from process.env.API_KEY.
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const apiKey = process.env.API_KEY;
 
-  // Calculate total cost for the prompt context
+  // Safeguard: Check if the key is still the default placeholder
+  if (!apiKey || apiKey === "your_gemini_api_key_here" || apiKey.trim() === "") {
+    throw new Error("API Key is missing or invalid. Please update your .env file or Vercel environment variables with a valid Gemini API Key from ai.google.dev.");
+  }
+  
+  const ai = new GoogleGenAI({ apiKey });
+
   const totalCost = Number(input.seedCost) + 
                     Number(input.fertilizerCost) + 
                     Number(input.labourCost) + 
@@ -19,49 +21,31 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
                     Number(input.otherCost);
 
   const prompt = `
-    You are an expert agricultural economist devoted to fair trade for farmers.
-    Calculate a fair price for the following crop, ensuring the farmer gets a significant benefit.
-    Consider hidden costs, inflation, and a living wage margin.
-    
-    Input Data:
-    - Crop: ${input.cropName}
-    - Quantity: ${input.quantity} ${input.unit}
-    - Quality: ${input.quality}
+    You are an expert agricultural economist. Calculate a fair price for:
+    - Crop: ${input.cropName} (${input.quantity} ${input.unit}, Quality: ${input.quality})
     - Region: ${input.region}
-    
-    Cost Breakdown:
-    - Seed Cost: ${input.seedCost}
-    - Fertilizer/Pesticide Cost: ${input.fertilizerCost}
-    - Labour Cost: ${input.labourCost}
-    - Maintenance Cost: ${input.maintenanceCost}
-    - Other (Transport/Storage): ${input.otherCost}
-    ---------------------------
     - Total Cultivation Cost: ${totalCost}
-    
     - Current Market Offer: ${input.marketRate}
     
-    Your goal is to justify a higher price if the market rate is unfair.
+    Ensure the farmer gets at least a 20-30% profit margin over costs.
     
-    Output strictly in JSON format matching this schema:
+    Output JSON:
     {
       "fairPrice": number,
       "marketComparison": number,
       "explanation": string,
-      "breakdown": {
-        "baseCost": number,
-        "profitMargin": number,
-        "riskPremium": number
-      },
+      "breakdown": { "baseCost": number, "profitMargin": number, "riskPremium": number },
       "recommendation": string
     }
   `;
 
   try {
-    // Switched to gemini-3-flash-preview to avoid 429 quota errors on the free tier.
+    // Using gemini-flash-lite-latest which has the highest available quota for free-tier users.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-flash-lite-latest',
       contents: prompt,
       config: {
+        thinkingConfig: { thinkingBudget: 0 }, // Disable thinking to save quota
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
@@ -85,13 +69,18 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
       }
     });
 
-    // Directly access the .text property (not a method call) as per the guidelines.
     const text = response.text;
     if (!text) throw new Error("The AI returned an empty response.");
     
     return JSON.parse(text.trim()) as PriceResult;
   } catch (error: any) {
     console.error("Gemini API Error:", error);
+    
+    // Check specifically for rate limiting
+    if (error.message?.includes('429') || error.message?.includes('Quota')) {
+      throw new Error("RATE_LIMIT: The AI is currently busy (Free Tier limit). Please wait 60 seconds and try again, or check if your API Key has Gemini Flash enabled.");
+    }
+    
     throw new Error(error.message || "An error occurred while calculating the fair price.");
   }
 };

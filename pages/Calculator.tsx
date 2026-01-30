@@ -1,11 +1,10 @@
-
 import React, { useState } from 'react';
 import { useLanguage } from '../contexts/LanguageContext';
 import { calculateFairPrice } from '../services/geminiService';
 import { CropInput, PriceResult } from '../types';
 import { Button } from '../components/Button';
 import { Input } from '../components/Input';
-import { Calculator, AlertTriangle, CheckCircle, TrendingUp, IndianRupee, AlertCircle } from 'lucide-react';
+import { Calculator, AlertTriangle, CheckCircle, TrendingUp, IndianRupee, AlertCircle, RefreshCw, Key } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 
 const CalculatorPage: React.FC = () => {
@@ -30,7 +29,6 @@ const CalculatorPage: React.FC = () => {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
     setFormData({ ...formData, [e.target.name]: e.target.value });
-    // Clear errors when user types
     if (errorMsg) setErrorMsg(null);
   };
 
@@ -44,18 +42,20 @@ const CalculatorPage: React.FC = () => {
       const data = await calculateFairPrice(formData, language);
       setResult(data);
     } catch (err: any) {
-      setErrorMsg(err.message || "Failed to calculate. Please check API key or internet.");
+      setErrorMsg(err.message);
     } finally {
       setLoading(false);
     }
   };
 
-  // Helper to calculate total displayed cost
   const totalCost = Number(formData.seedCost || 0) + 
                     Number(formData.fertilizerCost || 0) + 
                     Number(formData.labourCost || 0) + 
                     Number(formData.maintenanceCost || 0) + 
                     Number(formData.otherCost || 0);
+
+  const isRateLimit = errorMsg?.includes('RATE_LIMIT');
+  const isKeyError = errorMsg?.includes('API Key');
 
   return (
     <div className="max-w-7xl mx-auto px-4 py-8">
@@ -64,14 +64,25 @@ const CalculatorPage: React.FC = () => {
       </h1>
       
       {errorMsg && (
-        <div className="mb-6 bg-red-50 border-l-4 border-red-500 p-4 rounded-md flex items-start">
-          <AlertCircle className="text-red-500 w-5 h-5 mr-2 mt-0.5 flex-shrink-0" />
-          <p className="text-red-700 font-medium">{errorMsg}</p>
+        <div className={`mb-6 p-4 rounded-xl border-l-4 flex items-start shadow-sm animate-shake ${isRateLimit ? 'bg-orange-50 border-orange-500' : 'bg-red-50 border-red-500'}`}>
+          {isRateLimit ? <RefreshCw className="text-orange-500 w-5 h-5 mr-3 mt-0.5 flex-shrink-0" /> : <AlertCircle className="text-red-500 w-5 h-5 mr-3 mt-0.5 flex-shrink-0" />}
+          <div>
+            <p className={`font-bold ${isRateLimit ? 'text-orange-800' : 'text-red-800'}`}>
+              {isRateLimit ? 'Server Busy (Rate Limit)' : 'Calculation Error'}
+            </p>
+            <p className={`text-sm mt-1 ${isRateLimit ? 'text-orange-700' : 'text-red-700'}`}>
+              {errorMsg}
+            </p>
+            {isKeyError && (
+              <a href="https://ai.google.dev/gemini-api/docs/api-key" target="_blank" rel="noreferrer" className="mt-2 inline-flex items-center text-xs font-bold text-red-900 hover:underline bg-red-100 px-2 py-1 rounded">
+                <Key size={12} className="mr-1" /> Get a New API Key
+              </a>
+            )}
+          </div>
         </div>
       )}
 
       <div className="grid lg:grid-cols-2 gap-8">
-        {/* Input Form */}
         <div className="bg-white p-6 rounded-xl shadow-md border border-green-100 h-fit">
           <form onSubmit={handleCalculate} className="space-y-4">
             <Input 
@@ -117,51 +128,14 @@ const CalculatorPage: React.FC = () => {
               placeholder="e.g. Punjab, Bihar"
             />
             
-            {/* Cost Breakdown Section */}
             <div className="bg-gray-50 p-4 rounded-lg border border-gray-200">
                <h3 className="font-semibold text-gray-700 mb-3 text-sm uppercase tracking-wide">Cultivation Costs</h3>
                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <Input 
-                    label={t('calc_cost_seeds')}
-                    name="seedCost"
-                    type="number"
-                    value={formData.seedCost}
-                    onChange={handleChange}
-                    required
-                  />
-                  <Input 
-                    label={t('calc_cost_fertilizer')}
-                    name="fertilizerCost"
-                    type="number"
-                    value={formData.fertilizerCost}
-                    onChange={handleChange}
-                    required
-                  />
-                   <Input 
-                    label={t('calc_cost_labour')}
-                    name="labourCost"
-                    type="number"
-                    value={formData.labourCost}
-                    onChange={handleChange}
-                    required
-                  />
-                   <Input 
-                    label={t('calc_cost_maint')}
-                    name="maintenanceCost"
-                    type="number"
-                    value={formData.maintenanceCost}
-                    onChange={handleChange}
-                    required
-                  />
-                  <Input 
-                    label={t('calc_cost_other')}
-                    name="otherCost"
-                    type="number"
-                    value={formData.otherCost}
-                    onChange={handleChange}
-                    required
-                    className="md:col-span-2"
-                  />
+                  <Input label={t('calc_cost_seeds')} name="seedCost" type="number" value={formData.seedCost} onChange={handleChange} required />
+                  <Input label={t('calc_cost_fertilizer')} name="fertilizerCost" type="number" value={formData.fertilizerCost} onChange={handleChange} required />
+                  <Input label={t('calc_cost_labour')} name="labourCost" type="number" value={formData.labourCost} onChange={handleChange} required />
+                  <Input label={t('calc_cost_maint')} name="maintenanceCost" type="number" value={formData.maintenanceCost} onChange={handleChange} required />
+                  <Input label={t('calc_cost_other')} name="otherCost" type="number" value={formData.otherCost} onChange={handleChange} required className="md:col-span-2" />
                </div>
                <div className="mt-4 pt-3 border-t border-gray-300 flex justify-between items-center text-green-800">
                   <span className="font-bold text-sm">{t('calc_total_cost_label')}:</span>
@@ -185,7 +159,6 @@ const CalculatorPage: React.FC = () => {
           </form>
         </div>
 
-        {/* Results Display */}
         <div className="space-y-6">
           {!result && !loading && (
             <div className="bg-green-50 p-8 rounded-xl border border-green-200 text-center flex flex-col items-center justify-center h-full min-h-[400px]">
@@ -203,7 +176,6 @@ const CalculatorPage: React.FC = () => {
 
           {result && (
             <>
-              {/* Summary Card */}
               <div className="bg-white p-6 rounded-xl shadow-lg border-l-8 border-green-500">
                 <h2 className="text-xl font-bold text-gray-800 mb-2">Fair Value Assessment</h2>
                 <div className="flex items-end gap-2 mb-4">
@@ -219,7 +191,6 @@ const CalculatorPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Chart & Breakdown */}
               <div className="bg-white p-6 rounded-xl shadow-md border border-gray-100">
                 <h3 className="font-bold text-gray-800 mb-4">Cost Breakdown</h3>
                 <div className="h-64 w-full">
@@ -235,23 +206,18 @@ const CalculatorPage: React.FC = () => {
                       <YAxis />
                       <Tooltip />
                       <Bar dataKey="value" radius={[4, 4, 0, 0]}>
-                        {
-                           [0, 1, 2].map((entry, index) => (
+                        { [0, 1, 2].map((entry, index) => (
                             <Cell key={`cell-${index}`} fill={['#9CA3AF', '#22C55E', '#EAB308'][index]} />
-                          ))
-                        }
+                          )) }
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
               </div>
 
-              {/* Analysis Text */}
               <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
                 <h3 className="font-bold text-blue-900 mb-2">AI Expert Analysis</h3>
-                <p className="text-blue-800 text-sm leading-relaxed mb-4">
-                  {result.explanation}
-                </p>
+                <p className="text-blue-800 text-sm leading-relaxed mb-4">{result.explanation}</p>
                 <div className="bg-white bg-opacity-60 p-4 rounded-lg">
                   <strong className="block text-blue-900 mb-1">Recommendation:</strong>
                   <p className="text-blue-800 italic">{result.recommendation}</p>

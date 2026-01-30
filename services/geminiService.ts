@@ -57,9 +57,9 @@ export const calculateFairPrice = async (input: CropInput, language: SupportedLa
   `;
 
   try {
-    // Select gemini-3-pro-preview for tasks involving advanced reasoning, coding, and math.
+    // Switched to gemini-3-flash-preview to avoid 429 quota errors on the free tier.
     const response = await ai.models.generateContent({
-      model: 'gemini-3-pro-preview',
+      model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
         responseMimeType: "application/json",
